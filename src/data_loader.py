@@ -44,6 +44,9 @@ def load_churn_data(
 
     return df
 
+def format_column_names():
+    pass
+
 def preprocess_data(df: pd.DataFrame):
     pass
 
