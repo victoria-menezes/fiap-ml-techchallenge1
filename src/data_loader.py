@@ -1,7 +1,7 @@
 # src/data_loader.py
 import pandas as pd
 from pathlib import Path
-from utils import path_from_root
+import utils
 
 def load_churn_data(
         filepath : Path | str
@@ -29,7 +29,7 @@ def load_churn_data(
             File is not a .xlsx
     """
 
-    path_full : Path = path_from_root(filepath)
+    path_full : Path = utils.path_from_root(filepath)
 
     if not path_full.exists():
         raise FileNotFoundError(f"File not found: {filepath}")
@@ -44,11 +44,56 @@ def load_churn_data(
 
     return df
 
-def format_column_names():
-    pass
+def format_column_names(cols : list[str]) -> list[str]:
+    """Returns a list with the renamed columns in order"""
+    new_cols : list[str] = []
+    for col in cols:
+        new_col : str = utils.format_column_name(col)
+        new_cols += [new_col]
+
+    return new_cols
 
 def preprocess_data(df: pd.DataFrame):
     pass
 
 def get_feature_names(df: pd.DataFrame):
     pass
+# def preprocess_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+#     """
+#     Preprocessa dados separando features e target.
+    
+#     Args:
+#         df: DataFrame com dados brutos.
+        
+#     Returns:
+#         Tupla (features DataFrame, target Series).
+        
+#     Raises:
+#         KeyError: Se coluna target não existe.
+#     """
+#     target_col = "default payment next month"
+    
+#     if target_col not in df.columns:
+#         raise KeyError(f"Coluna target '{target_col}' não encontrada")
+    
+#     # Remover ID e target das features
+#     feature_cols = [c for c in df.columns if c not in ["ID", target_col]]
+    
+#     X = df[feature_cols]
+#     y = df[target_col]
+    
+#     return X, y
+
+
+# def get_feature_names(df: pd.DataFrame) -> List[str]:
+#     """
+#     Retorna lista de nomes de features (exclui ID e target).
+    
+#     Args:
+#         df: DataFrame com dados.
+        
+#     Returns:
+#         Lista de nomes de colunas.
+#     """
+#     exclude = ["ID", "default payment next month"]
+#     return [c for c in df.columns if c not in exclude]
