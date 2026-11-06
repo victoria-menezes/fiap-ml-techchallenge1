@@ -47,11 +47,33 @@ class TestPathFromRoot:
 
 class TestHandleSpecialCharacters:
     @pytest.mark.parametrize(
-        "input_string, expected", [
-            ('sããão Paulo', 'saaao_paulo'),
-            ('$#**92abc', '92abc'),
-            ('não Querías', 'nao_querias')
+        "input_string, input_lowercase, expected", [
+            ('sããão Paulo', True, 'saaao paulo'),
+            ('$#**92abc', True, '92abc'),
+            ('não Querías', False, 'nao Querias')
         ]
     )
-    def test_handle_special_characters(self, input_string, expected):
-        assert utils.handle_special_characters(input_string) == expected
+    def test_handle_special_characters(self, input_string, input_lowercase, expected):
+        assert utils.handle_special_characters(input_string, input_lowercase) == expected
+
+class TestFormatColumnName:
+    @pytest.mark.parametrize(
+        "input_string, input_lowercase, expected", [
+            ('Pastel de Belém', True, 'pastel_de_belem'),
+            ('Gênero / Sexo', True, 'genero_sexo'),
+            ('não Querías', False, 'nao_Querias')
+        ]
+    )
+    def test_format_column_name(self, input_string, input_lowercase, expected):
+        assert utils.format_column_name(input_string, input_lowercase) == expected
+
+class TestRemoveDoubleSpaces:
+    @pytest.mark.parametrize(
+        "input_string, expected",[
+            ('a  b c', 'a b c'),
+            ('abc  abc   abc', 'abc abc abc'),
+            ('a                      ', 'a')
+        ]
+    )
+    def test_remove_double_spaces(self, input_string, expected):
+        assert utils.remove_double_spaces(input_string) == expected
