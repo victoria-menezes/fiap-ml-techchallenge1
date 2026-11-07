@@ -12,7 +12,7 @@ def load_churn_data(
     Args
     ---
         filepath : Path | str
-            Path of an excel file from the project root
+            Path of the file from the project root
     
     Returns
     ---
@@ -34,15 +34,57 @@ def load_churn_data(
     if not path_full.exists():
         raise FileNotFoundError(f"File not found: {filepath}")
 
-    if path_full.suffix != '.xlsx':
-        raise TypeError(f'File is not a .xlsx file')
-
-    df : pd.DataFrame = pd.read_excel(path_full)
+    df : pd.DataFrame 
+    
+    ext : str = path_full.suffix
+    match ext:
+        case '.xlsl':
+            df = pd.read_excel(path_full)
+        case '.csv':
+            df = pd.read_csv(path_full)
+        case '.parquet':
+            df = pd.read_parquet(path_full)
+        case _:
+            raise TypeError(f'Invalid file type ({ext})')
 
     if df.empty:
         raise ValueError(f"Empty dataset")
 
     return df
+
+def export_churn_data(
+        df : pd.DataFrame,
+        filepath : str | Path,
+        override : bool = True
+) -> None:
+    """
+        Loads churn data
+    
+        Args
+        ---
+            filepath : Path | str
+                Path of an excel file from the project root
+        
+        Returns
+        ---
+            pd.Dataframe
+                Data in form of a pandas DataFrame
+    
+        Raises
+        ---
+            FileNotFoundError
+                File does not exist
+            ValueError
+                Data is blank
+            TypeError
+                File is not a .xlsx
+        """
+    return
+    path_full : Path = utils.path_from_root(filepath)
+
+    if not path_full.exists():
+        raise File
+    
 
 def format_column_names(cols : list[str]) -> list[str]:
     """Returns a list with the renamed columns in order"""
