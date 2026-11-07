@@ -1,6 +1,13 @@
 import pytest
 import data_loader
 
+
+class TestLoadChurnData:
+    pass
+
+class TestExportChurnData:
+    pass
+
 class TestFormatColumnNames:
     @pytest.mark.parametrize(
         "input_cols, expected",[
@@ -10,3 +17,4 @@ class TestFormatColumnNames:
     def test_format_column_names_works(self, input_cols, expected):
         """Verifies the function outputs expected results"""
         assert data_loader.format_column_names(input_cols) == expected
+
