@@ -12,7 +12,7 @@ def load_churn_data(
     Args
     ---
         filepath : Path | str
-            Path of an excel file from the project root
+            Path of the file from the project root
     
     Returns
     ---
@@ -26,7 +26,7 @@ def load_churn_data(
         ValueError
             Data is blank
         TypeError
-            File is not a .xlsx
+            File type is not supported
     """
 
     path_full : Path = utils.path_from_root(filepath)
@@ -34,15 +34,66 @@ def load_churn_data(
     if not path_full.exists():
         raise FileNotFoundError(f"File not found: {filepath}")
 
-    if path_full.suffix != '.xlsx':
-        raise TypeError(f'File is not a .xlsx file')
-
-    df : pd.DataFrame = pd.read_excel(path_full)
+    df : pd.DataFrame 
+    
+    ext : str = path_full.suffix
+    match ext:
+        case '.xlsx':
+            df = pd.read_excel(path_full)
+        case '.csv':
+            df = pd.read_csv(path_full)
+        case '.parquet':
+            df = pd.read_parquet(path_full)
+        case _:
+            raise TypeError(f'Invalid file type ({ext})')
 
     if df.empty:
         raise ValueError(f"Empty dataset")
 
     return df
+
+def export_churn_data(
+        df : pd.DataFrame,
+        filepath : str | Path,
+        override : bool = True,
+        csv_separator : str = ','
+) -> None:
+    """
+    Exports churn data
+
+    Args
+    ---
+        df : pd.DataFrame
+            DataFrame to be exported
+        filepath : Path | str
+            Path of the file to be saved
+        override : bool
+
+    Raises
+    ---
+        FileExistsError
+            File already exists and override = False
+        TypeError
+            Attempted to save to an unsupported file type
+        """
+    path_full : Path = utils.path_from_root(filepath)
+
+    if path_full.exists() and not override:
+        raise FileExistsError(f'File already exists, use override = True to save over it')
+    
+    ext : str = path_full.suffix
+
+    match ext:
+        case '.xlsx':
+            df.to_excel(path_full)
+        case '.csv':
+            df.to_csv(path_full, sep=csv_separator)
+        case '.parquet':
+            df.to_parquet(path_full)
+        case _:
+            raise TypeError(f'Invalid file type ({ext})')
+
+    
 
 def format_column_names(cols : list[str]) -> list[str]:
     """Returns a list with the renamed columns in order"""
