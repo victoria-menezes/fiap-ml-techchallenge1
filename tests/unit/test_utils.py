@@ -53,7 +53,7 @@ class TestHandleSpecialCharacters:
             ('não Querías', False, 'nao Querias')
         ]
     )
-    def test_handle_special_characters_works(self, input_string, input_lowercase, expected):
+    def test_handle_special_characters_success(self, input_string, input_lowercase, expected):
         """Verifies the function outputs expected results"""
         assert utils.handle_special_characters(input_string, input_lowercase) == expected
 
@@ -65,7 +65,7 @@ class TestFormatColumnName:
             ('não Querías', False, 'nao_Querias')
         ]
     )
-    def test_format_column_name_works(self, input_string, input_lowercase, expected):
+    def test_format_column_name_success(self, input_string, input_lowercase, expected):
         """Verifies the function outputs expected results"""
         assert utils.format_column_name(input_string, input_lowercase) == expected
 
@@ -77,6 +77,6 @@ class TestRemoveDoubleSpaces:
             ('a                      ', 'a')
         ]
     )
-    def test_remove_double_spaces_works(self, input_string, expected):
+    def test_remove_double_spaces_success(self, input_string, expected):
         """Verifies the function outputs expected results"""
         assert utils.remove_double_spaces(input_string) == expected
