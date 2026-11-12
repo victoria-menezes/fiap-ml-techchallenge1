@@ -2,6 +2,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
+### Private methods
+
+# Util
+
 def _get_number_of_rows(
         amount_of_plots : int,
         ncols : int
@@ -245,6 +249,24 @@ def _group_and_sort_labels(
     
     return value_labels, value_counts
 
+# Draw
+def _draw_pie(ax, x, labels, autopct, colors, title):
+    ax.pie(
+        x=x,
+        labels=labels,
+        autopct=autopct,
+        colors=colors
+        )
+    ax.set_title(title)
+
+def _draw_barh(ax, labels, width, color, title, xlabel):
+    ax.barh(y=[str(l) for l in labels], width=width, color=color)
+    ax.invert_yaxis()
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+
+# Validation
+
 def _plot_arg_validation(
         data : pd.DataFrame | None = None,
         max_categories : int | None = None,
@@ -375,14 +397,14 @@ def plot_value_counts_pie(
 
         ordered_colors : list = _sort_colors(color_dict, value_labels, generic_colors)
         
-        ax.pie(
+        _draw_pie(
+            ax = ax,
             x = value_counts,
             labels = value_labels,
             autopct='%1.1f%%',
-            colors = ordered_colors
+            colors = ordered_colors,
+            title=f'{title_prefix}{col}'
         )
-        
-        ax.set_title(f'{title_prefix}{col}')
 
     # hiding unused axs
     for ax in axs.flatten()[len(data.columns):]:
@@ -484,11 +506,14 @@ def plot_value_counts(
         
         # barh needs strings as labels
         value_labels_strings : list[str] = [str(label) for label in value_labels]
-        ax.barh(
-            y = value_labels_strings,
-            width = value_counts,
-            color = ordered_colors
-        )
+        
+        _draw_barh(
+            ax=ax,
+            labels=value_labels_strings,
+            width=value_counts,
+            color= ordered_colors,
+            title=f'{title_prefix}{col}',
+            xlabel=xlabel)
 
         ax.invert_yaxis()
         
@@ -595,15 +620,14 @@ def plot_group_variable_sum_into_pie(
     
             ordered_colors : list = _sort_colors(color_dict, value_labels, generic_colors)
             
-            ax.pie(
+            _draw_pie(
+                ax = ax,
                 x = value_counts,
                 labels = value_labels,
                 autopct='%1.1f%%',
-                colors = ordered_colors
-            )
-            
-            ax.set_title(f'{title_prefix}{col}')
-    
+                colors = ordered_colors,
+                title=f'{title_prefix}{col}'
+            )    
 
     # hiding unused axs
     for ax in axs.flatten()[len(data.columns) - 1:]:
