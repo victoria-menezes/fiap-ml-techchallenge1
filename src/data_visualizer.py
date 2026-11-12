@@ -224,6 +224,8 @@ def _plot_arg_validation(
 
 ### Public methods
 
+### VALUE COUNTS
+
 def plot_value_counts_pie(
         data : pd.DataFrame,
         fig_title : str = '',
@@ -425,6 +427,100 @@ def plot_value_counts(
         ax.set_title(f'{title_prefix}{col}')
         ax.set_xlabel(xlabel)
         
+    # hiding unused axs
+    for ax in axs.flatten()[len(data.columns):]:
+        ax.set_visible(False)
+    
+    fig.suptitle(fig_title)
+    return fig, axs
+
+def plot_pie(
+        data : pd.DataFrame,
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 3,
+        sort_alphabetically : bool = False,
+        title_prefix : str = 'Distribuição de clientes por ',
+        color_dict : dict | None = None,
+        max_categories : int = 5,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado'
+):
+    """Plots each column's value counts as a pie chart, one subplot per column.
+
+    Parameters
+    ---
+        data : pd.DataFrame
+            One pie chart is drawn per column in data
+        fig_title : str, default ''
+            Title for the whole figure
+        figsize : tuple, default (16, 6)
+        ncols : int, default 3
+            Number of subplot columns. Unused subplots are hidden,
+            row amount is calculated based on ncols
+        sort_alphabetically : bool, default False
+            If True, slices are ordered alphabetically by label instead of by
+            frequency. The aggregated slice is always placed last
+        title_prefix : str, default 'Distribuição de clientes por '
+            Text concatenated before the column name in each subplot title
+        color_dict : dict | None, default None
+            label:color dictionary to color slices according to their label.
+            Unmapped labels use the default matplotlib color cycle        
+        max_categories : int, default 5
+            Maximum number of slices per chart, including the aggregated slice.
+            Less frequent categories are summed into other_label
+            Must be 2 or higher
+        other_label : str, default 'Outros'
+            Label for the slice that aggregates the least frequent categories.
+            Should not match an existing category
+        dropna : bool, default False
+            If False, missing values are shown as their own slice (see na_label)
+        na_label : str, default 'Sem dado'
+            Label for the missing values slice when dropna is False.
+            Should not match an existing category
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols)
+    """
+    _plot_arg_validation(
+            data=data,
+            max_categories=max_categories,
+            ncols=ncols
+        )
+
+    generic_colors : list = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+    nrows : int = _get_number_of_rows(len(data.columns), ncols)
+    fig, axs = plt.subplots(
+        figsize=figsize,
+        ncols=ncols,
+        nrows=nrows,
+        squeeze = False,
+        layout='constrained'
+        )
+
+    for (col, series), ax in zip(data.items(), axs.flatten()):
+        value_labels = tuple(series.index)
+        value_counts = tuple(series.values)
+
+        if sort_alphabetically:
+            value_labels, value_counts = _sort_labels_alphabetically(value_labels, value_counts)
+        
+        ordered_colors : list = _sort_colors(color_dict, value_labels, generic_colors)
+        
+        ax.pie(
+            x = value_counts,
+            labels = value_labels,
+            autopct='%1.1f%%',
+            colors = ordered_colors
+        )
+        
+        ax.set_title(f'{title_prefix}{col}')
+
     # hiding unused axs
     for ax in axs.flatten()[len(data.columns):]:
         ax.set_visible(False)
