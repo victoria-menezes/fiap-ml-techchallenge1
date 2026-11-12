@@ -44,7 +44,7 @@ def _sort_labels_alphabetically(
     """
     sorted_pairs : list = sorted(
         zip(value_labels, value_counts_data),
-        key = lambda p : str(p[0].casefold())
+        key = lambda p : str(p[0]).casefold()
     )
 
     if not sorted_pairs:
@@ -128,6 +128,100 @@ def _sort_colors(
             generic_color_count += 1
     return ordered_colors
 
+def _get_value_labels_and_counts(
+        series : pd.Series,
+        sort_alphabetically : bool = False,
+        max_categories : int = 5,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado',
+    ):
+    """Computes the labels and counts to plot for a single column.
+
+    Counts the values, drops categories with zero occurrences,
+    replaces missing values with na_label, groups the overflowing
+    categories into other_label and optionally sorts the
+    result alphabetically.
+
+    Parameters
+    ---
+        series : pd.Series
+            Column to count
+        sort_alphabetically : bool, default False
+            If True, labels are ordered alphabetically instead of by
+            frequency. The aggregated entry is always placed last
+        max_categories : int, default 5
+            Maximum number of entries, including the aggregated one.
+            Must be 2 or higher
+        other_label : str, default 'Outros'
+            Label for the aggregated entry.
+            Should not match an existing category
+        dropna : bool, default False
+            If False, missing values are kept as their own entry (see na_label)
+        na_label : str, default 'Sem dado'
+            Label for missing values when dropna is False.
+            Should not match an existing category
+
+    Returns
+    ---
+        tuple[tuple, tuple]
+            (labels, counts), aligned by position.
+            Two empty tuples if there is nothing to count
+    """
+    value_counts_series : pd.Series = series.value_counts(dropna=dropna)
+    value_counts_series = value_counts_series[value_counts_series > 0] # ignores values with 0 incidence
+
+    value_counts_series.index = value_counts_series.index.astype(object).fillna(na_label) # replaces NA label with na_label
+    value_counts_series = _group_overflow(value_counts_series, max_categories, other_label)
+
+    value_labels : tuple
+    value_counts : tuple
+    if sort_alphabetically:
+        other_count : int | None = value_counts_series.get(other_label)
+        visible_categories : pd.Series = value_counts_series.drop(other_label, errors='ignore') # runs even if there is no other_label column
+
+        value_labels, value_counts = _sort_labels_alphabetically(visible_categories.index, visible_categories)
+
+        # others at the end
+        if other_count is not None:
+            value_labels, value_counts = (*value_labels, other_label), (*value_counts, other_count)
+    else:
+        value_labels = tuple(value_counts_series.index)
+        value_counts = tuple(value_counts_series)
+    
+    return value_labels, value_counts
+
+def _plot_arg_validation(
+        data : pd.DataFrame | None,
+        max_categories : int | None,
+        ncols : int | None
+):
+    """Validates arguments shared by the plotting functions.
+
+    Only the arguments that are not None are checked, so callers can
+    validate a subset of them.
+
+    Parameters
+    ---
+        data : pd.DataFrame | None, default None
+            Must have at least one row and one column
+        max_categories : int | None, default None
+            Must be 2 or higher
+        ncols : int | None, default None
+            Must be at least 1
+
+    Raises
+    ---
+        ValueError
+            If data is empty, max_categories is less than 2 or ncols is less than 1
+    """
+    if data is not None and data.empty:
+        raise ValueError('DataFrame is empty')
+    if max_categories is not None and max_categories<2:
+        raise ValueError('max_categories must be 2 or higher')
+    if ncols is not None and ncols<1:
+        raise ValueError('ncols must be at least 1')
+
 ### Public methods
 
 def plot_value_counts_pie(
@@ -182,13 +276,15 @@ def plot_value_counts_pie(
         axs : np.ndarray
             2D array of Axes with shape (nrows, ncols)
     """
-    if max_categories<2:
-        raise ValueError('max_categories must be 2 or higher') 
+    _plot_arg_validation(
+            data=data,
+            max_categories=max_categories,
+            ncols=ncols
+        )
 
     generic_colors : list = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
     nrows : int = _get_number_of_rows(len(data.columns), ncols)
-    cols : list = list(data.columns)
     fig, axs = plt.subplots(
         figsize=figsize,
         ncols=ncols,
@@ -197,27 +293,15 @@ def plot_value_counts_pie(
         layout='constrained'
         )
 
-    for col, ax in zip(cols, axs.flatten()):
-        value_counts_series : pd.Series = data[col].value_counts(dropna=dropna)
-        value_counts_series = value_counts_series[value_counts_series > 0] # ignores values with 0 incidence
-
-        value_counts_series.index = value_counts_series.index.astype(object).fillna(na_label) # replaces NA label with na_label
-        value_counts_series = _group_overflow(value_counts_series, max_categories, other_label)
-
-        value_labels : tuple
-        value_counts : tuple
-        if sort_alphabetically:
-            other_count : int | None = value_counts_series.get(other_label)
-            visible_categories : pd.Series = value_counts_series.drop(other_label, errors='ignore') # runs even if there is no other_label column
-
-            value_labels, value_counts = _sort_labels_alphabetically(visible_categories.index, visible_categories)
-
-            # others at the end
-            if other_count is not None:
-                value_labels, value_counts = (*value_labels, other_label), (*value_counts, other_count)
-        else:
-            value_labels = tuple(value_counts_series.index)
-            value_counts = tuple(value_counts_series)
+    for (col, series), ax in zip(data.items(), axs.flatten()):
+        value_labels, value_counts = _get_value_labels_and_counts(
+            series,
+            sort_alphabetically = sort_alphabetically,
+            max_categories = max_categories,
+            other_label = other_label,
+            dropna=dropna,
+            na_label=na_label
+            )
 
         ordered_colors : list = _sort_colors(color_dict, value_labels, generic_colors)
         
@@ -231,7 +315,7 @@ def plot_value_counts_pie(
         ax.set_title(f'{title_suffix}{col}')
 
     # hiding unused axs
-    for ax in axs.flatten()[len(cols):]:
+    for ax in axs.flatten()[len(data.columns):]:
         ax.set_visible(False)
     
     fig.suptitle(fig_title)
@@ -242,71 +326,108 @@ def plot_value_counts(
         fig_title : str = '',
         figsize : tuple = (16, 6),
         ncols : int = 3,
-        max_categories : int = 10,
         sort_alphabetically : bool = False,
-        title_suffix : str = 'Clientes por ',
-        xlabel : str = 'Qtd'
+        title_prefix : str = 'Clientes por ',
+        xlabel : str = 'Qtd',
+        color_dict : dict | None = None,
+        generic_color : str = 'blue',
+        max_categories : int = 10,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado'
 ):
-    return
-    """Plots columns' value counts in horizontal bar charts
-    
+    """Plots each column's value counts as a horizontal bar chart, one subplot per column.
+
+    Bars are listed top to bottom: by descending frequency, or alphabetically
+    if sort_alphabetically is True.
+    The aggregated bar is always last.
+
     Parameters
     ---
-        data : pd.Dataframe
+        data : pd.DataFrame
+            One bar chart is drawn per column in data
+        fig_title : str, default ''
+            Title for the whole figure
         figsize : tuple, default (16, 6)
-        ncols : int
-        max_categories : int
-        sort_alphabetically : bool
-            If True, the category axis will be sorter alphabetically
-        title_suffix : str, default 'Clientes por '
-            Text that will be concatenated before the column name in the graph's title
+        ncols : int, default 3
+            Number of subplot columns. Unused subplots are hidden,
+            row amount is calculated based on ncols
+        sort_alphabetically : bool, default False
+            If True, bars are ordered alphabetically by label instead of by
+            frequency.
+            The aggregated bar is always placed last
+        title_prefix : str, default 'Clientes por '
+            Text concatenated before the column name in each subplot title
         xlabel : str, default 'Qtd'
-    
+            Label for the count axis of every subplot
+        color_dict : dict | None, default None
+            label:color dictionary to color bars according to their label.
+            Unmapped labels use generic_color
+        generic_color : str, default 'blue'
+            Color for every bar whose label is not in color_dict
+        max_categories : int, default 10
+            Maximum number of bars per chart, including the aggregated bar.
+            Less frequent categories are summed into other_label.
+            Must be 2 or higher
+        other_label : str, default 'Outros'
+            Label for the bar that aggregates the least frequent categories.
+            Should not match an existing category
+        dropna : bool, default False
+            If False, missing values are shown as their own bar (see na_label)
+        na_label : str, default 'Sem dado'
+            Label for the missing values bar when dropna is False.
+            Should not match an existing category
+
     Returns
     ---
-        fig, axs
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols)
     """
+    
+    _plot_arg_validation(
+        data=data,
+        max_categories=max_categories,
+        ncols=ncols
+    )
+
     nrows : int = _get_number_of_rows(len(data.columns), ncols)
-    cols = [str(col) for col in data.columns]
-    fig, axs = plt.subplots(figsize=figsize, ncols=ncols, nrows=nrows)
+    fig, axs = plt.subplots(
+        figsize=figsize,
+        ncols=ncols,
+        nrows=nrows,
+        squeeze = False,
+        layout='constrained'
+        )
 
-    if nrows == 1 and ncols == 1:
-        value_counts_data : pd.Series = data[cols[0]].value_counts()
-        value_labels : list | pd.Index = data[cols[0]].value_counts().index
+    for (col, series), ax in zip(data.items(), axs.flatten()):
+        value_labels, value_counts = _get_value_labels_and_counts(
+            series,
+            sort_alphabetically = sort_alphabetically,
+            max_categories = max_categories,
+            other_label = other_label,
+            dropna=dropna,
+            na_label=na_label
+            )
 
-        if sort_alphabetically:
-            value_labels, value_counts_data = _sort_labels_alphabetically(value_labels, value_counts_data)
+        ordered_colors : list = _sort_colors(color_dict, value_labels, [generic_color])
         
-        ordered_colors = _sort_colors(color_dict, value_labels, generic_colors)
+        # barh needs strings as labels
+        value_labels_strings : list[str] = [str(label) for label in value_labels]
+        ax.barh(
+            y = value_labels_strings,
+            width = value_counts,
+            color = ordered_colors
+        )
 
-        # if there are too many categories to plot
-        if len(value_labels) > max_categories:
-            axs.barh(y = value_labels[:max_categories], width = value_counts[:10])
-        else:
-            axs.barh(y = value_labels, width = value_counts)
-
-        axs.set_title(f'{title_suffix}{cols[0]}')
-        axs.set_xlabel(xlabel)
-
-    else:
-        for col, ax in zip(cols, axs.flatten()):
-            value_labels = [str(label) for label in data[col].value_counts().index]
-
-            value_counts = data[col].value_counts().values
-
-            if sort_alphabetically:
-                sorted_pairs = sorted(zip(value_labels, value_counts))
-                value_labels, value_counts = zip(*sorted_pairs)
-
-            # if there are too many categories to plot
-            if len(value_labels) > max_categories:
-                ax.barh(y = value_labels[:max_categories], width = value_counts[:10])
-            else:
-                ax.barh(y = value_labels, width = value_counts)
-
-            ax.set_title(f'{title_suffix}{col}')
-            ax.set_xlabel(xlabel)
-
+        ax.invert_yaxis()
+        
+        ax.set_title(f'{title_prefix}{col}')
+        ax.set_xlabel(xlabel)
+        
+    # hiding unused axs
+    for ax in axs.flatten()[len(data.columns):]:
+        ax.set_visible(False)
+    
     fig.suptitle(fig_title)
-    plt.tight_layout()
     return fig, axs
