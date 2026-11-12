@@ -191,6 +191,60 @@ def _get_value_labels_and_counts(
     
     return value_labels, value_counts
 
+def _group_and_sort_labels(
+        data : pd.DataFrame,
+        group_by : str,
+        target_col : str,
+        sort_alphabetically : bool = False,
+        max_categories : int = 5,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado',
+    ):
+    """Sums target_col per category of group_by, then groups overflow and sorts.
+
+    Parameters
+    ---
+        data : pd.DataFrame
+        group_by : str
+            Column whose categories become the labels
+        target_col : str
+            Numerical column that is summed per category
+        sort_alphabetically : bool, default False
+        max_categories : int, default 5
+        other_label : str, default 'Outros'
+        dropna : bool, default False
+        na_label : str, default 'Sem dado'
+
+    Returns
+    ---
+        tuple[tuple, tuple]
+            (labels, sums), aligned by position.
+    """
+    
+    values_series : pd.Series = data.groupby(group_by, dropna=dropna)[target_col].sum()
+    
+    values_series.index = values_series.index.astype(object).fillna(na_label) # replaces NA label with na_label
+    values_series = values_series.sort_values(ascending=False)
+    values_series = _group_overflow(values_series, max_categories, other_label)
+
+    value_labels : tuple
+    value_counts : tuple
+    if sort_alphabetically:
+        other_count : int | None = values_series.get(other_label)
+        visible_categories : pd.Series = values_series.drop(other_label, errors='ignore') # runs even if there is no other_label column
+
+        value_labels, value_counts = _sort_labels_alphabetically(visible_categories.index, visible_categories)
+
+        # others at the end
+        if other_count is not None:
+            value_labels, value_counts = (*value_labels, other_label), (*value_counts, other_count)
+    else:
+        value_labels = tuple(values_series.index)
+        value_counts = tuple(values_series)
+    
+    return value_labels, value_counts
+
 def _plot_arg_validation(
         data : pd.DataFrame | None = None,
         max_categories : int | None = None,
@@ -221,6 +275,20 @@ def _plot_arg_validation(
         raise ValueError('max_categories must be 2 or higher')
     if ncols is not None and ncols<1:
         raise ValueError('ncols must be at least 1')
+
+def _group_data_validation(
+        data : pd.DataFrame,
+        target_col : str | None = None,
+        group_by : str | None = None
+):
+    if target_col is not None:
+        if target_col not in data.columns:
+            raise ValueError(f'target_col {target_col} not found in data')
+        if not [col for col in data.columns if col != target_col]:
+            raise ValueError(f'Data needs at least one column besides target_col')
+    
+    if group_by is not None and group_by not in data.columns:
+        raise ValueError(f'group_by {group_by} not found in data')
 
 ### Public methods
 
@@ -434,25 +502,29 @@ def plot_value_counts(
     fig.suptitle(fig_title)
     return fig, axs
 
-def plot_pie(
+def plot_group_variable_sum_into_pie(
         data : pd.DataFrame,
+        target_col : str,
         fig_title : str = '',
         figsize : tuple = (16, 6),
         ncols : int = 3,
         sort_alphabetically : bool = False,
-        title_prefix : str = 'Distribuição de clientes por ',
+        title_prefix : str = 'Agrupamento por ',
         color_dict : dict | None = None,
         max_categories : int = 5,
         other_label : str = 'Outros',
         dropna : bool = False,
         na_label : str = 'Sem dado'
 ):
-    """Plots each column's value counts as a pie chart, one subplot per column.
+    """Groups the data into each given column, and plots the sum of target_col's values
 
     Parameters
     ---
         data : pd.DataFrame
             One pie chart is drawn per column in data
+        target_col : str
+            Numerical column that is summed per category
+            Must be a numerical column
         fig_title : str, default ''
             Title for the whole figure
         figsize : tuple, default (16, 6)
@@ -487,10 +559,16 @@ def plot_pie(
             2D array of Axes with shape (nrows, ncols)
     """
     _plot_arg_validation(
-            data=data,
-            max_categories=max_categories,
-            ncols=ncols
-        )
+        data=data,
+        max_categories=max_categories,
+        ncols=ncols
+    )
+    _group_data_validation(
+        data=data,
+        target_col=target_col
+    )
+
+    group_cols : list = [col for col in data.columns if col != target_col]
 
     generic_colors : list = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
@@ -503,26 +581,32 @@ def plot_pie(
         layout='constrained'
         )
 
-    for (col, series), ax in zip(data.items(), axs.flatten()):
-        value_labels = tuple(series.index)
-        value_counts = tuple(series.values)
-
-        if sort_alphabetically:
-            value_labels, value_counts = _sort_labels_alphabetically(value_labels, value_counts)
-        
-        ordered_colors : list = _sort_colors(color_dict, value_labels, generic_colors)
-        
-        ax.pie(
-            x = value_counts,
-            labels = value_labels,
-            autopct='%1.1f%%',
-            colors = ordered_colors
-        )
-        
-        ax.set_title(f'{title_prefix}{col}')
+    for col, ax in zip(group_cols, axs.flatten()):
+            value_labels, value_counts = _group_and_sort_labels(
+                data[[col, target_col]],
+                group_by = str(col),
+                target_col=target_col,
+                sort_alphabetically = sort_alphabetically,
+                max_categories = max_categories,
+                other_label = other_label,
+                dropna=dropna,
+                na_label=na_label
+                )
+    
+            ordered_colors : list = _sort_colors(color_dict, value_labels, generic_colors)
+            
+            ax.pie(
+                x = value_counts,
+                labels = value_labels,
+                autopct='%1.1f%%',
+                colors = ordered_colors
+            )
+            
+            ax.set_title(f'{title_prefix}{col}')
+    
 
     # hiding unused axs
-    for ax in axs.flatten()[len(data.columns):]:
+    for ax in axs.flatten()[len(data.columns) - 1:]:
         ax.set_visible(False)
     
     fig.suptitle(fig_title)
