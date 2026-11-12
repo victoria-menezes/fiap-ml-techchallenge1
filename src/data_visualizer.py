@@ -192,9 +192,9 @@ def _get_value_labels_and_counts(
     return value_labels, value_counts
 
 def _plot_arg_validation(
-        data : pd.DataFrame | None,
-        max_categories : int | None,
-        ncols : int | None
+        data : pd.DataFrame | None = None,
+        max_categories : int | None = None,
+        ncols : int | None = None
 ):
     """Validates arguments shared by the plotting functions.
 
@@ -230,7 +230,7 @@ def plot_value_counts_pie(
         figsize : tuple = (16, 6),
         ncols : int = 3,
         sort_alphabetically : bool = False,
-        title_suffix : str = 'Distribuição de clientes por ',
+        title_prefix : str = 'Distribuição de clientes por ',
         color_dict : dict | None = None,
         max_categories : int = 5,
         other_label : str = 'Outros',
@@ -252,7 +252,7 @@ def plot_value_counts_pie(
         sort_alphabetically : bool, default False
             If True, slices are ordered alphabetically by label instead of by
             frequency. The aggregated slice is always placed last
-        title_suffix : str, default 'Distribuição de clientes por '
+        title_prefix : str, default 'Distribuição de clientes por '
             Text concatenated before the column name in each subplot title
         color_dict : dict | None, default None
             label:color dictionary to color slices according to their label.
@@ -312,7 +312,7 @@ def plot_value_counts_pie(
             colors = ordered_colors
         )
         
-        ax.set_title(f'{title_suffix}{col}')
+        ax.set_title(f'{title_prefix}{col}')
 
     # hiding unused axs
     for ax in axs.flatten()[len(data.columns):]:
