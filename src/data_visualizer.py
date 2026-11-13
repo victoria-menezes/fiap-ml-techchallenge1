@@ -1065,3 +1065,151 @@ def plot_group_variable_sum_into_barh(
     if suptitle_args:
         _suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
+
+def plot_alternating_barh(
+        data1 : pd.DataFrame,
+        data2 : pd.DataFrame,
+        data1_label : str = 'Sample 1',
+        data2_label : str = 'Sample 2',
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 2,
+        sort_alphabetically : bool = False,
+        title_prefix : str = 'Clientes por ',
+        xlabel : str = 'Qtd',
+        color_dict : dict | None = None,
+        generic_color : str = 'blue',
+        max_categories : int = 10,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado',
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
+    ) -> tuple[Figure, np.ndarray]:
+    """Plots, for each column of data1 and data2 in alternation,
+    a horizontal bar chart of value counts. Good for comparisons.
+
+    Parameters
+    ---
+        data1 : pd.DataFrame
+            One bar chart is drawn per column in data1
+            Must not be empty
+        data2 : pd.DataFrame
+            One bar chart is drawn per column in data2
+            Must not be empty
+        fig_title : str, default ''
+            Title for the whole figure
+        figsize : tuple, default (16, 6)
+        ncols : int, default 2
+            Number of subplot columns. Must be at least 1.
+            Unused subplots are hidden, row amount is calculated based on ncols
+            For ease of reading, it is reccomended to be an even value
+        sort_alphabetically : bool, default False
+            If True, bars are ordered alphabetically by label instead of by
+            summed value. The aggregated bar is always placed last
+        title_prefix : str, default 'Agrupamento por '
+            Text concatenated before the column name in each subplot title
+        xlabel : str, default 'Qtd'
+            Label for the value axis of every subplot
+        color_dict : dict | None, default None
+            label:color dictionary to color bars according to their label.
+            Unmapped labels use generic_color
+        generic_color : str, default 'blue'
+            Color for every bar whose label is not in color_dict
+        max_categories : int, default 10
+            Maximum number of bars per chart, including the aggregated bar.
+            Categories with the smallest sums are merged into other_label.
+            Must be 2 or higher
+        other_label : str, default 'Outros'
+            Label for the bar that aggregates the smallest categories.
+            Should not match an existing category
+        dropna : bool, default False
+            If False, rows with a missing category are grouped into their
+            own bar (see na_label)
+        na_label : str, default 'Sem dado'
+            Label for the missing category bar when dropna is False.
+            Should not match an existing category
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols)
+
+    Raises
+    ---
+        ValueError
+            If data1 or data2 is empty, max_categories is less than 2, ncols is less
+            than 1, column names are duplicated, or target_col is missing,
+            non-numeric or the only column
+    """
+    _validation_batch_plotters(
+        data=data1,
+        max_categories=max_categories,
+        ncols=ncols
+        )
+    _validation_batch_plotters(
+        data=data2
+    )
+
+    fig, axs = _create_fig(
+        nplots=len(data1.columns)*2,
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    axs_flattened = axs.flatten()
+    ax_count : int = len(axs_flattened)
+
+    for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(0, ax_count, 2)):
+        print((col1, series1), (col2, series2), ax_idx)
+        if col1 in data2.columns:
+            value_labels1, value_counts1 = _get_value_counts_and_sort_labels(
+                series1,
+                sort_alphabetically=sort_alphabetically,
+                max_categories=max_categories,
+                other_label=other_label,
+                dropna=dropna,
+                na_label=na_label
+            )
+
+            ordered_colors : list = _sort_colors(color_dict, value_labels1, [generic_color])
+
+            _draw_barh(
+                ax=axs_flattened[ax_idx],
+                labels=value_labels1,
+                width=value_counts1,
+                color=ordered_colors,
+                title=f'{title_prefix}{col1} - {data1_label}',
+                xlabel=xlabel,
+                title_args=title_args
+            )
+
+            value_labels2, value_counts2 = _get_value_counts_and_sort_labels(
+                series2,
+                sort_alphabetically=sort_alphabetically,
+                max_categories=max_categories,
+                other_label=other_label,
+                dropna=dropna,
+                na_label=na_label
+            )
+
+            ordered_colors : list = _sort_colors(color_dict, value_labels2, [generic_color])
+
+            _draw_barh(
+                ax=axs_flattened[ax_idx + 1],
+                labels=value_labels2,
+                width=value_counts2,
+                color=ordered_colors,
+                title=f'{title_prefix}{col2} - {data2_label}',
+                xlabel=xlabel,
+                title_args=title_args
+            )
+
+
+
+    _hide_unused_axes(axs, ax_count)
+
+    if suptitle_args:
+        _suptitle_format(fig, fig_title, **suptitle_args)
+    return fig, axs
