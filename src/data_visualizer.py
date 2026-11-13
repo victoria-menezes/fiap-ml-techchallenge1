@@ -515,7 +515,7 @@ def _visual_setup(
     alpha_minor = 0.05,
     linestyle_major='-',
     linestyle_minor='-',
-    facecolor="#E0E0E0"
+    facecolor="#F0F0F0"
 ) -> None:
     ax.set_facecolor(facecolor)
     
