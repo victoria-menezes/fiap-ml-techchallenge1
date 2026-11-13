@@ -1162,7 +1162,6 @@ def plot_alternating_barh(
     ax_count : int = len(axs_flattened)
 
     for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(0, ax_count, 2)):
-        print((col1, series1), (col2, series2), ax_idx)
         if col1 in data2.columns:
             value_labels1, value_counts1 = _get_value_counts_and_sort_labels(
                 series1,
