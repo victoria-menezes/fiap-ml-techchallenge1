@@ -504,21 +504,13 @@ def plot_value_counts(
 
         ordered_colors : list = _sort_colors(color_dict, value_labels, [generic_color])
         
-        # barh needs strings as labels
-        value_labels_strings : list[str] = [str(label) for label in value_labels]
-        
         _draw_barh(
             ax=ax,
-            labels=value_labels_strings,
+            labels=value_labels,
             width=value_counts,
             color= ordered_colors,
             title=f'{title_prefix}{col}',
             xlabel=xlabel)
-
-        ax.invert_yaxis()
-        
-        ax.set_title(f'{title_prefix}{col}')
-        ax.set_xlabel(xlabel)
         
     # hiding unused axs
     for ax in axs.flatten()[len(data.columns):]:
@@ -628,6 +620,116 @@ def plot_group_variable_sum_into_pie(
                 colors = ordered_colors,
                 title=f'{title_prefix}{col}'
             )    
+
+    # hiding unused axs
+    for ax in axs.flatten()[len(data.columns) - 1:]:
+        ax.set_visible(False)
+    
+    fig.suptitle(fig_title)
+    return fig, axs
+
+def plot_group_variable_sum_into_barh(
+        data : pd.DataFrame,
+        target_col : str,
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 3,
+        sort_alphabetically : bool = False,
+        title_prefix : str = 'Agrupamento por ',
+        xlabel : str = 'Qtd',
+        color_dict : dict | None = None,
+        generic_color : str = 'blue',
+        max_categories : int = 10,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado'
+):
+    """Groups the data into each given column, and plots the sum of target_col's values
+
+    Parameters
+    ---
+        data : pd.DataFrame
+            One pie chart is drawn per column in data
+        target_col : str
+            Numerical column that is summed per category
+            Must be a numerical column
+        fig_title : str, default ''
+            Title for the whole figure
+        figsize : tuple, default (16, 6)
+        ncols : int, default 3
+            Number of subplot columns. Unused subplots are hidden,
+            row amount is calculated based on ncols
+        sort_alphabetically : bool, default False
+            If True, slices are ordered alphabetically by label instead of by
+            frequency. The aggregated slice is always placed last
+        title_prefix : str, default 'Distribuição de clientes por '
+            Text concatenated before the column name in each subplot title
+        color_dict : dict | None, default None
+            label:color dictionary to color slices according to their label.
+            Unmapped labels use the default matplotlib color cycle        
+        max_categories : int, default 5
+            Maximum number of slices per chart, including the aggregated slice.
+            Less frequent categories are summed into other_label
+            Must be 2 or higher
+        other_label : str, default 'Outros'
+            Label for the slice that aggregates the least frequent categories.
+            Should not match an existing category
+        dropna : bool, default False
+            If False, missing values are shown as their own slice (see na_label)
+        na_label : str, default 'Sem dado'
+            Label for the missing values slice when dropna is False.
+            Should not match an existing category
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols)
+    """
+    _plot_arg_validation(
+        data=data,
+        max_categories=max_categories,
+        ncols=ncols
+    )
+    _group_data_validation(
+        data=data,
+        target_col=target_col
+    )
+
+    group_cols : list = [col for col in data.columns if col != target_col]
+
+    nrows : int = _get_number_of_rows(len(data.columns), ncols)
+
+    fig, axs = plt.subplots(
+        figsize=figsize,
+        ncols=ncols,
+        nrows=nrows,
+        squeeze = False,
+        layout='constrained'
+        )
+
+    for col, ax in zip(group_cols, axs.flatten()):
+            value_labels, value_counts = _group_and_sort_labels(
+                data[[col, target_col]],
+                group_by = str(col),
+                target_col=target_col,
+                sort_alphabetically = sort_alphabetically,
+                max_categories = max_categories,
+                other_label = other_label,
+                dropna=dropna,
+                na_label=na_label
+                )
+    
+            ordered_colors : list = _sort_colors(color_dict, value_labels, [generic_color])
+
+            _draw_barh(
+                ax=ax,
+                labels=value_labels,
+                width=value_counts,
+                color= ordered_colors,
+                title=f'{title_prefix}{col}',
+                xlabel=xlabel)
+            
 
     # hiding unused axs
     for ax in axs.flatten()[len(data.columns) - 1:]:
