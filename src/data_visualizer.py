@@ -507,6 +507,39 @@ def _suptitle_format(
         color=color
     )
 
+def _visual_setup(
+    ax : Axes,
+    color_major="#000000",
+    alpha_major= 0.20,
+    color_minor="#000000",
+    alpha_minor = 0.05,
+    linestyle_major='-',
+    linestyle_minor='-',
+    facecolor="#E0E0E0"
+) -> None:
+    ax.set_facecolor(facecolor)
+    
+    ax.set_axisbelow(True)
+    ax.minorticks_on()
+
+    ax.grid(
+        True,
+        which='major',
+        color=color_major,
+        linestyle=linestyle_major,
+        alpha=alpha_major
+    )
+    ax.grid(
+        which='minor',
+        color=color_minor,
+        linestyle=linestyle_minor,
+        alpha=alpha_minor
+    )
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+
 def _draw_pie(
         ax : Axes,
         x : tuple | list,
@@ -515,7 +548,7 @@ def _draw_pie(
         colors : list,
         title : str,
         title_args : dict | None = None
-    ) -> None:
+) -> None:
     """Draws a pie chart with a title on ax.
 
     Parameters
@@ -531,6 +564,8 @@ def _draw_pie(
             Slice colors. Cycled if shorter than x
         title : str
     """
+    _visual_setup(ax)
+
     ax.pie(
         x=x,
         labels=labels,
@@ -550,7 +585,7 @@ def _draw_barh(
         title : str,
         xlabel : str,
         title_args : dict | None = None
-    ) -> None:
+) -> None:
     """Draws a horizontal bar chart on ax, with the first label on top.
 
     Bars are drawn at integer positions and labeled through the tick
@@ -570,6 +605,8 @@ def _draw_barh(
         xlabel : str
             Label for the length axis
     """
+    _visual_setup(ax)
+
     positions : range = range(len(labels))
     ax.barh(
         y=positions,  # draws at position first
@@ -1066,7 +1103,7 @@ def plot_group_variable_sum_into_barh(
         _suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
-def plot_alternating_barh(
+def plot_alternating_value_counts_barh(
         data1 : pd.DataFrame,
         data2 : pd.DataFrame,
         data1_label : str = 'Sample 1',
