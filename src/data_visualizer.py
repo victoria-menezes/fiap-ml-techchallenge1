@@ -1095,8 +1095,7 @@ def plot_group_variable_sum_into_pie(
 
     _hide_unused_axes(axs, len(group_cols))
 
-    if suptitle_args:
-        _suptitle_format(fig, fig_title, **suptitle_args)
+    _suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 def plot_group_variable_sum_into_barh(
