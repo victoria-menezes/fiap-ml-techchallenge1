@@ -11,8 +11,8 @@ from data_visualizer import (
     _sort_labels_alphabetically,
     _group_overflow,
     _sort_colors,
-    _get_value_labels_and_counts,
-    _plot_arg_validation,
+    _get_value_counts_and_sort_labels,
+    _validation_batch_plotters,
     plot_value_counts_pie,
     plot_value_counts,
 )
@@ -112,10 +112,10 @@ class TestSortColors:
 class TestPlotArgValidation:
 
     def test_no_arguments_does_not_raise(self):
-        _plot_arg_validation()
+        _validation_batch_plotters()
 
     def test_valid_arguments_do_not_raise(self):
-        _plot_arg_validation(
+        _validation_batch_plotters(
             data=pd.DataFrame({'a': ['x']}), max_categories=2, ncols=1
         )
 
@@ -125,22 +125,22 @@ class TestPlotArgValidation:
     ])
     def test_rejects_empty_dataframe(self, empty):
         with pytest.raises(ValueError, match='empty'):
-            _plot_arg_validation(data=empty)
+            _validation_batch_plotters(data=empty)
 
     @pytest.mark.parametrize('bad', [1, 0, -5])
     def test_rejects_small_max_categories(self, bad):
         with pytest.raises(ValueError, match='max_categories'):
-            _plot_arg_validation(max_categories=bad)
+            _validation_batch_plotters(max_categories=bad)
 
     @pytest.mark.parametrize('bad', [0, -1])
     def test_rejects_small_ncols(self, bad):
         with pytest.raises(ValueError, match='ncols'):
-            _plot_arg_validation(ncols=bad)
+            _validation_batch_plotters(ncols=bad)
 
     def test_only_checks_arguments_that_were_given(self):
         # an invalid ncols is reported even when the others are omitted
         with pytest.raises(ValueError, match='ncols'):
-            _plot_arg_validation(ncols=0)
+            _validation_batch_plotters(ncols=0)
 
 
 @pytest.mark.parametrize('plot', [plot_value_counts_pie, plot_value_counts])
@@ -166,25 +166,25 @@ class TestPlotFunctionsValidation:
 
 class TestGetValueLabelsAndCounts:
     def test_returns_tuples_ordered_by_frequency(self):
-        labels, counts = _get_value_labels_and_counts(pd.Series(list('aaabbc')))
+        labels, counts = _get_value_counts_and_sort_labels(pd.Series(list('aaabbc')))
         assert labels == ('a', 'b', 'c')
         assert counts == (3, 2, 1)
 
     def test_groups_overflow_into_other(self):
-        labels, counts = _get_value_labels_and_counts(
+        labels, counts = _get_value_counts_and_sort_labels(
             pd.Series(list('aaabbc')), max_categories=2
         )
         assert labels == ('a', 'Outros')
         assert counts == (3, 3)
 
     def test_custom_other_label(self):
-        labels, _ = _get_value_labels_and_counts(
+        labels, _ = _get_value_counts_and_sort_labels(
             pd.Series(list('aaabbc')), max_categories=2, other_label='Misc'
         )
         assert labels == ('a', 'Misc')
 
     def test_sort_alphabetically_keeps_counts_paired(self):
-        labels, counts = _get_value_labels_and_counts(
+        labels, counts = _get_value_counts_and_sort_labels(
             pd.Series(list('bbbaac')), sort_alphabetically=True
         )
         assert labels == ('a', 'b', 'c')
@@ -192,25 +192,25 @@ class TestGetValueLabelsAndCounts:
 
     def test_other_goes_last_when_sorted_alphabetically(self):
         series = pd.Series(['z'] * 5 + ['b'] * 4 + ['a'] + ['c'])
-        labels, counts = _get_value_labels_and_counts(
+        labels, counts = _get_value_counts_and_sort_labels(
             series, max_categories=3, sort_alphabetically=True
         )
         assert labels == ('b', 'z', 'Outros')
         assert counts == (4, 5, 2)
 
     def test_na_shown_with_default_label(self):
-        labels, counts = _get_value_labels_and_counts(pd.Series(['x', 'x', None]))
+        labels, counts = _get_value_counts_and_sort_labels(pd.Series(['x', 'x', None]))
         assert labels == ('x', 'Sem dado')
         assert counts == (2, 1)
 
     def test_custom_na_label(self):
-        labels, _ = _get_value_labels_and_counts(
+        labels, _ = _get_value_counts_and_sort_labels(
             pd.Series(['x', None]), na_label='Missing'
         )
         assert 'Missing' in labels
 
     def test_dropna_removes_na(self):
-        labels, counts = _get_value_labels_and_counts(
+        labels, counts = _get_value_counts_and_sort_labels(
             pd.Series(['x', 'x', None]), dropna=True
         )
         assert labels == ('x',)
@@ -218,26 +218,26 @@ class TestGetValueLabelsAndCounts:
 
     def test_ignores_unobserved_categorical_levels(self):
         cat = pd.Series(pd.Categorical(['a', 'b'], categories=['a', 'b', 'unused']))
-        labels, _ = _get_value_labels_and_counts(cat)
+        labels, _ = _get_value_counts_and_sort_labels(cat)
         assert 'unused' not in labels
 
     @pytest.mark.parametrize('sort', [False, True])
     def test_nothing_to_count_returns_empty_tuples(self, sort):
         series = pd.Series([None, None], dtype=object)
-        result = _get_value_labels_and_counts(
+        result = _get_value_counts_and_sort_labels(
             series, dropna=True, sort_alphabetically=sort
         )
         assert result == ((), ())
 
     def test_total_is_preserved_when_grouping(self):
         series = pd.Series(list('aaaabbbcc') + ['d', 'e'])
-        _, counts = _get_value_labels_and_counts(series, max_categories=3)
+        _, counts = _get_value_counts_and_sort_labels(series, max_categories=3)
         assert sum(counts) == len(series)
 
     def test_does_not_modify_input(self):
         series = pd.Series(['x', 'x', None])
         before = series.copy()
-        _get_value_labels_and_counts(series)
+        _get_value_counts_and_sort_labels(series)
         pd.testing.assert_series_equal(series, before)
 
 
