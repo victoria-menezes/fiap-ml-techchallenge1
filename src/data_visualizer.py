@@ -553,6 +553,7 @@ def plot_value_counts_pie(
         sort_alphabetically : bool = False,
         title_prefix : str = 'Distribuição de clientes por ',
         color_dict : dict | None = None,
+        generic_colors : list | None = None,
         max_categories : int = 5,
         other_label : str = 'Outros',
         dropna : bool = False,
@@ -578,7 +579,9 @@ def plot_value_counts_pie(
             Text concatenated before the column name in each subplot title
         color_dict : dict | None, default None
             label:color dictionary to color slices according to their label.
-            Unmapped labels use the default matplotlib color cycle
+            Unmapped labels use generic_colors cycle
+        generic_colors : list | none, default None
+            If None, the default matplotlib color cycle will be used
         max_categories : int, default 5
             Maximum number of slices per chart, including the aggregated slice.
             Less frequent categories are summed into other_label
@@ -609,7 +612,8 @@ def plot_value_counts_pie(
         ncols=ncols
     )
 
-    generic_colors : list = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    if generic_colors is None:
+        generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
     fig, axs = _create_fig(
         nplots=len(data.columns),
@@ -760,6 +764,7 @@ def plot_group_variable_sum_into_pie(
         sort_alphabetically : bool = False,
         title_prefix : str = 'Agrupamento por ',
         color_dict : dict | None = None,
+        generic_colors : list | None = None,
         max_categories : int = 5,
         other_label : str = 'Outros',
         dropna : bool = False,
@@ -795,7 +800,9 @@ def plot_group_variable_sum_into_pie(
             Text concatenated before the column name in each subplot title
         color_dict : dict | None, default None
             label:color dictionary to color slices according to their label.
-            Unmapped labels use the default matplotlib color cycle
+            Unmapped labels use generic_colors cycle
+        generic_colors : list | none, default None
+            If None, the default matplotlib color cycle will be used
         max_categories : int, default 5
             Maximum number of slices per chart, including the aggregated slice.
             Categories with the smallest sums are merged into other_label.
@@ -835,7 +842,8 @@ def plot_group_variable_sum_into_pie(
 
     group_cols : list = [col for col in data.columns if col != target_col]
 
-    generic_colors : list = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    if generic_colors is None:
+            generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
     fig, axs = _create_fig(
         nplots=len(group_cols),
