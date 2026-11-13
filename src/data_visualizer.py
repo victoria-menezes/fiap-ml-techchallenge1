@@ -625,6 +625,26 @@ def _draw_barh(
         _title_format(ax, title)
 
     ax.set_xlabel(xlabel)
+
+def _draw_hist(
+        ax : Axes,
+        x : pd.Series | pd.DataFrame,
+        color : str,
+        title : str,
+        title_args : dict | None = None
+) -> None:
+    """TBA
+    """
+    _visual_setup(ax)
+
+    ax.hist(
+        x=x,
+        color=color
+    )
+    if title_args:
+        _title_format(ax, title, **title_args)
+    else:
+        _title_format(ax, title)
 ### Public methods
 
 ### VALUE COUNTS
@@ -846,6 +866,101 @@ def plot_value_counts(
         _suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
+### HISTOGRAM
+
+def plot_hist(
+        data : pd.DataFrame,
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 3,
+        title_prefix : str = 'Distribuição de clientes por ',
+        color : str = 'blue',
+        title_args : dict | None = None,
+        suptitle_args : dict = {}
+    ) -> tuple[Figure, np.ndarray]:
+    """TBA
+    """
+    _validation_batch_plotters(
+        data=data,
+        ncols=ncols
+    )
+
+    fig, axs = _create_fig(
+        nplots=len(data.columns),
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    for (col, series), ax in zip(data.items(), axs.flatten()):
+        _draw_hist(
+            ax=ax,
+            x=series,
+            color=color,
+            title=f'{title_prefix}{col}',
+            title_args=title_args
+        )
+
+    _hide_unused_axes(axs, len(data.columns))
+    
+    _suptitle_format(fig, fig_title, **suptitle_args)
+    return fig, axs
+
+def plot_alternating_hist(
+        data1 : pd.DataFrame,
+        data2 : pd.DataFrame,
+        data1_label : str = 'Sample 1',
+        data2_label : str = 'Sample 2',
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 3,
+        title_prefix : str = 'Distribuição por ',
+        color : str = 'blue',
+        title_args : dict | None = None,
+        suptitle_args : dict = {}
+    ) -> tuple[Figure, np.ndarray]:
+    """TBA
+    """
+    _validation_batch_plotters(
+        data=data1,
+        ncols=ncols
+    )
+    
+    _validation_batch_plotters(
+        data=data2
+    )
+
+    fig, axs = _create_fig(
+        nplots=len(data1.columns)*2,
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    
+    axs_flattened = axs.flatten()
+    ax_count : int = len(axs_flattened)
+
+    for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(0, ax_count, 2)):
+        if col1 in data2.columns:
+            _draw_hist(
+                ax=axs_flattened[ax_idx],
+                x=series1,
+                color=color,
+                title=f'{title_prefix}{col1} - {data1_label}',
+                title_args=title_args
+            )
+            _draw_hist(
+                ax=axs_flattened[ax_idx + 1],
+                x=series2,
+                color=color,
+                title=f'{title_prefix}{col2} - {data2_label}',
+                title_args=title_args
+            )
+
+    _hide_unused_axes(axs, ax_count)
+
+    _suptitle_format(fig, fig_title, **suptitle_args)
+    return fig, axs
+
 ### GROUPED SUMS
 def plot_group_variable_sum_into_pie(
         data : pd.DataFrame,
@@ -862,7 +977,7 @@ def plot_group_variable_sum_into_pie(
         dropna : bool = False,
         na_label : str = 'Sem dado',
         title_args : dict | None = None,
-        suptitle_args : dict | None = None
+        suptitle_args : dict = {}
     ) -> tuple[Figure, np.ndarray]:
     """Plots, for each column of data, a pie chart of target_col's sum per category.
 
