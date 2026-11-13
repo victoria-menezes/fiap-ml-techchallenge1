@@ -640,19 +640,23 @@ def _draw_hist(
     )
     _title_format(ax, title, **title_args)
 
-def _draw_boxplot(
+def _draw_boxplots(
         ax : Axes,
-        x : pd.Series | pd.DataFrame
-):
+        x : pd.Series,
+        label : str,
+        position : float,
+        title : str,
+        title_args : dict = {}
+) -> None:
     """TBA"""
-
     _visual_setup(ax)
 
     ax.boxplot(
-        x=x
+        x=x,
+        tick_labels=[label],
+        positions=[position]
     )
 
-    
     _title_format(ax, title, **title_args)
 
 
@@ -1365,6 +1369,64 @@ def plot_alternating_value_counts_barh(
             )
 
 
+
+    _hide_unused_axes(axs, ax_count)
+
+    _suptitle_format(fig, fig_title, **suptitle_args)
+    return fig, axs
+
+def plot_comparing_box(
+        data1 : pd.DataFrame,
+        data2 : pd.DataFrame,
+        data1_label : str = 'Sample 1',
+        data2_label : str = 'Sample 2',
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 2,
+        title_prefix : str = 'Clientes por ',
+        max_categories : int = 10,
+        title_args : dict = {},
+        suptitle_args : dict = {}
+    ) -> tuple[Figure, np.ndarray]:
+    """TBA
+    """
+    _validation_batch_plotters(
+        data=data1,
+        max_categories=max_categories,
+        ncols=ncols
+        )
+    _validation_batch_plotters(
+        data=data2
+    )
+
+    fig, axs = _create_fig(
+        nplots=len(data1.columns),
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    axs_flattened = axs.flatten()
+    ax_count : int = len(axs_flattened)
+
+    for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(ax_count)):
+        if col1 in data2.columns:
+            _draw_boxplots(
+                ax=axs_flattened[ax_idx],
+                x=series1,
+                label=data1_label,
+                position=0,
+                title=f'{title_prefix}{col1}',
+                title_args=title_args
+            )
+
+            _draw_boxplots(
+                ax=axs_flattened[ax_idx],
+                x=series2,
+                label=data2_label,
+                position=1,
+                title=f'{title_prefix}{col2}',
+                title_args=title_args
+            )
 
     _hide_unused_axes(axs, ax_count)
 
