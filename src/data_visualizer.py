@@ -469,13 +469,52 @@ def _get_group_by_and_sort_labels(
 
 # Draw
 
+def _title_format(
+    ax : Axes,
+    title : str,
+    fontsize : int = 10,
+    fontweight : str = 'bold',
+    fontstyle = 'normal',
+    fontfamily = 'sans-serif',
+    color = '#000000'
+) -> None:
+    """Sets ax's title properties to the given arguments"""
+    ax.set_title(
+        label=title,
+        fontsize=fontsize,
+        fontweight=fontweight,
+        fontstyle=fontstyle,
+        fontfamily=fontfamily,
+        color=color
+    )
+
+def _suptitle_format(
+    fig : Figure,
+    title : str,
+    fontsize : int = 16,
+    fontweight : str = 'bold',
+    fontstyle = 'normal',
+    fontfamily = 'sans-serif',
+    color = '#000000'
+) -> None:
+    """Sets figure's suptitle properties to the given arguments"""
+    fig.suptitle(
+        t=title,
+        fontsize=fontsize,
+        fontweight=fontweight,
+        fontstyle=fontstyle,
+        fontfamily=fontfamily,
+        color=color
+    )
+
 def _draw_pie(
         ax : Axes,
         x : tuple | list,
         labels : tuple | list,
         autopct : str,
         colors : list,
-        title : str
+        title : str,
+        title_args : dict | None = None
     ) -> None:
     """Draws a pie chart with a title on ax.
 
@@ -498,7 +537,10 @@ def _draw_pie(
         autopct=autopct,
         colors=colors
     )
-    ax.set_title(title)
+    if title_args:
+        _title_format(ax, title, **title_args)
+    else:
+        _title_format(ax, title)
 
 def _draw_barh(
         ax : Axes,
@@ -506,7 +548,8 @@ def _draw_barh(
         width : tuple | list,
         color : list,
         title : str,
-        xlabel : str
+        xlabel : str,
+        title_args : dict | None = None
     ) -> None:
     """Draws a horizontal bar chart on ax, with the first label on top.
 
@@ -538,9 +581,13 @@ def _draw_barh(
         labels=[str(label) for label in labels],
     )
     ax.invert_yaxis()
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
 
+    if title_args:
+        _title_format(ax, title, **title_args)
+    else:
+        _title_format(ax, title)
+
+    ax.set_xlabel(xlabel)
 ### Public methods
 
 ### VALUE COUNTS
@@ -557,7 +604,9 @@ def plot_value_counts_pie(
         max_categories : int = 5,
         other_label : str = 'Outros',
         dropna : bool = False,
-        na_label : str = 'Sem dado'
+        na_label : str = 'Sem dado',
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
 ) -> tuple[Figure, np.ndarray]:
     """Plots each column's value counts as a pie chart, one subplot per column.
 
@@ -640,12 +689,14 @@ def plot_value_counts_pie(
             labels=value_labels,
             autopct='%1.1f%%',
             colors=ordered_colors,
-            title=f'{title_prefix}{col}'
+            title=f'{title_prefix}{col}',
+            title_args=title_args
         )
 
     _hide_unused_axes(axs, len(data.columns))
 
-    fig.suptitle(fig_title)
+    if suptitle_args:
+        _suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 def plot_value_counts(
@@ -661,7 +712,9 @@ def plot_value_counts(
         max_categories : int = 10,
         other_label : str = 'Outros',
         dropna : bool = False,
-        na_label : str = 'Sem dado'
+        na_label : str = 'Sem dado',
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """Plots each column's value counts as a horizontal bar chart, one subplot per column.
 
@@ -746,12 +799,14 @@ def plot_value_counts(
             width=value_counts,
             color=ordered_colors,
             title=f'{title_prefix}{col}',
-            xlabel=xlabel
+            xlabel=xlabel,
+            title_args=title_args
         )
 
     _hide_unused_axes(axs, len(data.columns))
 
-    fig.suptitle(fig_title)
+    if suptitle_args:
+        _suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 ### GROUPED SUMS
@@ -768,7 +823,9 @@ def plot_group_variable_sum_into_pie(
         max_categories : int = 5,
         other_label : str = 'Outros',
         dropna : bool = False,
-        na_label : str = 'Sem dado'
+        na_label : str = 'Sem dado',
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """Plots, for each column of data, a pie chart of target_col's sum per category.
 
@@ -871,12 +928,14 @@ def plot_group_variable_sum_into_pie(
             labels=value_labels,
             autopct='%1.1f%%',
             colors=ordered_colors,
-            title=f'{title_prefix}{col}'
+            title=f'{title_prefix}{col}',
+            title_args=title_args
         )
 
     _hide_unused_axes(axs, len(group_cols))
 
-    fig.suptitle(fig_title)
+    if suptitle_args:
+        _suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 def plot_group_variable_sum_into_barh(
@@ -893,7 +952,9 @@ def plot_group_variable_sum_into_barh(
         max_categories : int = 10,
         other_label : str = 'Outros',
         dropna : bool = False,
-        na_label : str = 'Sem dado'
+        na_label : str = 'Sem dado',
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """Plots, for each column of data, a horizontal bar chart of target_col's sum per category.
 
@@ -995,10 +1056,12 @@ def plot_group_variable_sum_into_barh(
             width=value_sums,
             color=ordered_colors,
             title=f'{title_prefix}{col}',
-            xlabel=xlabel
+            xlabel=xlabel,
+            title_args=title_args
         )
 
     _hide_unused_axes(axs, len(group_cols))
 
-    fig.suptitle(fig_title)
+    if suptitle_args:
+        _suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
