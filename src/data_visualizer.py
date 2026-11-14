@@ -1,11 +1,95 @@
+from collections.abc import Hashable
+
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+
 import numpy as np
+
+### Private methods
+
+# Validators
+
+def _validate_ncols(ncols : int) -> None:
+    """Raises ValueError if ncols is below the minimum (1)."""
+    MIN_NCOLS = 1
+    if ncols < MIN_NCOLS:
+        raise ValueError(f'ncols must be at least {MIN_NCOLS}')
+
+def _validate_max_categories(max_categories : int) -> None:
+    """Raises ValueError if max_categories is below the minimum (2)."""
+    MIN_CATEGORIES = 2
+    if max_categories < MIN_CATEGORIES:
+        raise ValueError(f'max_categories must be {MIN_CATEGORIES} or higher')
+
+def _validation_batch_plotters(
+        data : pd.DataFrame | None = None,
+        max_categories : int | None = None,
+        ncols : int | None = None
+    ) -> None:
+    """Validates arguments shared by the plotting functions before
+    any figure is created.
+
+    Only the arguments that are not None are checked, so callers can
+    validate a subset of them.
+
+    Parameters
+    ---
+        data : pd.DataFrame | None, default None
+            Must have at least one row and one column
+        max_categories : int | None, default None
+            Must be 2 or higher
+        ncols : int | None, default None
+            Must be at least 1
+
+    Raises
+    ---
+        ValueError
+            If data is empty, max_categories is less than 2 or ncols is less than 1
+    """
+    if data is not None and data.empty:
+        raise ValueError('DataFrame is empty')
+    if max_categories is not None:
+        _validate_max_categories(max_categories)
+    if ncols is not None:
+        _validate_ncols(ncols)
+
+def _validation_batch_groupers(
+        data : pd.DataFrame,
+        target_col : Hashable
+    ) -> None:
+    """Validates the arguments specific to the grouped-sum plotting functions.
+
+    Parameters
+    ---
+        data : pd.DataFrame
+            Must have unique column names and at least one column
+            besides target_col
+        target_col : Hashable
+            Must be a column of data with a numeric dtype
+
+    Raises
+    ---
+        ValueError
+            If column names are duplicated, target_col is not in data,
+            target_col is not numeric, or there is no column to group by
+    """
+    if data.columns.has_duplicates:
+        raise ValueError('data must not have duplicate column names')
+    if target_col not in data.columns:
+        raise ValueError(f'target_col {target_col!r} not found in data')
+    if not pd.api.types.is_numeric_dtype(data[target_col]):
+        raise ValueError(f'target_col {target_col!r} must be numeric')
+    if len(data.columns) < 2:
+        raise ValueError('data needs at least one column besides target_col')
+
+# Util
 
 def _get_number_of_rows(
         amount_of_plots : int,
         ncols : int
-) -> int:
+    ) -> int:
     """Calculates how many rows are needed to fit amount_of_plots across ncols columns.
 
     Parameters
@@ -14,63 +98,73 @@ def _get_number_of_rows(
             Total number of subplots to draw
         ncols : int
             Number of subplot columns
+            Must be at least 1
 
     Returns
     ---
         int
+
+    Raises
+    ---
+        ValueError
+            If ncols is less than 1
     """
+    _validate_ncols(ncols)
     return int(np.ceil(amount_of_plots / ncols))
 
-def _sort_labels_alphabetically(
-            value_labels : pd.Index | list | tuple,
-            value_counts_data : pd.Series | list | tuple
-    ) -> tuple[tuple, tuple]: 
-    """Sorts labels alphabetically, keeping each count paired with its label.
 
-    Labels are compared by their string representation, so labels of mixed
-    types (e.g. strings and ints) can be sorted together.
+
+def _sort_labels_alphabetically(
+        value_labels : pd.Index | list | tuple,
+        value_data : pd.Series | list | tuple
+    ) -> tuple[tuple, tuple]:
+    """Sorts labels alphabetically, keeping each value paired with its label.
+
+    Labels are compared by their case-insensitive string representation, so
+    labels of mixed types (e.g. strings and ints) can be sorted together.
 
     Parameters
     ---
         value_labels : pd.Index | list | tuple
-        value_counts_data : pd.Series | list | tuple
-            Counts, in the same order as value_labels
+        value_data : pd.Series | list | tuple
+            Values, in the same order as value_labels
 
     Returns
     ---
         tuple[tuple, tuple]
-            (sorted labels, counts reordered to match)
+            (sorted labels, values reordered to match)
             Two empty tuples if the input is empty
     """
     sorted_pairs : list = sorted(
-        zip(value_labels, value_counts_data),
+        zip(value_labels, value_data),
         key = lambda p : str(p[0]).casefold()
     )
 
     if not sorted_pairs:
         return (), ()
-    
+
     ordered_value_labels, ordered_value_counts_data = zip(*sorted_pairs)
     return ordered_value_labels, ordered_value_counts_data
 
 def _group_overflow(
-            value_counts : pd.Series,
-            max_categories : int,
-            other_label : str = 'Outros'
+        value_counts : pd.Series,
+        max_categories : int,
+        other_label : str = 'Outros'
     ) -> pd.Series:
-    """Keeps the most frequent categories and sums the rest into a single one.
+    """Keeps the largest categories and sums the rest into a single one.
 
-    Expects value_counts sorted in descending order (as returned by
-    Series.value_counts()). If there are more than max_categories categories,
-    the top (max_categories - 1) are kept and the remainder is summed into
-    other_label, so the result has exactly max_categories entries.
+    Expects value_counts sorted in descending order. If there are more than
+    max_categories categories, the top (max_categories - 1) are kept and the
+    remainder is summed into other_label, so the result has exactly
+    max_categories entries. Works for integer counts and float sums alike.
 
     Parameters
     ---
         value_counts : pd.Series
-            Counts indexed by category, sorted in descending order
+            Values indexed by category, sorted in descending order
         max_categories : int
             Maximum number of entries in the result, including other_label
+            Must be at least 2
         other_label : str, default 'Outros'
             Label for the aggregated entry. Should not match an existing category
 
@@ -78,15 +172,72 @@ def _group_overflow(
     ---
         pd.Series
             value_counts unchanged if len(value_counts) <= max_categories,
-            otherwise the grouped counts
+            otherwise the grouped values
+    
+    Raises
+    ---
+        ValueError
+            If max_categories is less than 2 (checked even when no grouping
+            is needed)
     """
+    _validate_max_categories(max_categories)
     if len(value_counts) <= max_categories:
         return value_counts
 
     head : pd.Series = value_counts.iloc[:max_categories - 1]
-    other_total : int = int(value_counts.iloc[max_categories - 1:].sum())
+    other_total : float | int = value_counts.iloc[max_categories - 1:].sum()
     return pd.concat([head, pd.Series({other_label: other_total})])
 
+def _group_overflow_and_sort(
+        values : pd.Series,
+        sort_alphabetically : bool,
+        max_categories : int,
+        other_label : str
+    ) -> tuple[tuple, tuple]:
+    """Groups the overflowing categories into other_label and, optionally,
+    sorts the result alphabetically.
+
+    Parameters
+    ---
+        values : pd.Series
+            Counts or sums indexed by label, sorted in descending order
+        sort_alphabetically : bool
+            If True, labels are sorted alphabetically.
+            The aggregated entry is always placed last
+        max_categories : int
+            Maximum number of entries, including the aggregated one
+            Must be at least 2
+        other_label : str
+            Label for the aggregated entry
+
+    Returns
+    ---
+        tuple[tuple, tuple]
+            (labels, values), aligned by position.
+            Two empty tuples if values is empty
+    Raises
+    ---
+        ValueError
+            If max_categories is less than 2
+    """
+    values = _group_overflow(values, max_categories, other_label)
+
+    if not sort_alphabetically:
+        return tuple(values.index), tuple(values)
+
+    other_value : float | int | None = values.get(other_label)
+    visible_categories : pd.Series = values.drop(other_label, errors='ignore')
+
+    labels, amounts = _sort_labels_alphabetically(
+        visible_categories.index,
+        visible_categories
+    )
+
+    # aggregated entry goes last
+    if other_value is not None:
+        labels = (*labels, other_label)
+        amounts = (*amounts, other_value)
+    return labels, amounts
 
 def _sort_colors(
         color_dict : dict | None,
@@ -117,6 +268,7 @@ def _sort_colors(
     
     if color_dict is None:
         return generic_colors
+
     ordered_colors : list = []
     generic_color_count : int = 0
 
@@ -128,14 +280,72 @@ def _sort_colors(
             generic_color_count += 1
     return ordered_colors
 
-def _get_value_labels_and_counts(
+def _create_fig(
+        nplots : int,
+        ncols : int,
+        figsize : tuple,
+        layout : str = 'constrained'
+    ) -> tuple[Figure, np.ndarray]:
+    """Creates a figure with a grid of subplots large enough for nplots.
+
+    Parameters
+    ---
+        nplots : int
+            Number of subplots that will be drawn
+        ncols : int
+            Number of subplot columns.
+            Must be at least 1
+        figsize : tuple
+        layout : str, default 'constrained'
+            Matplotlib layout engine name
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols), always 2D
+
+    Raises
+    ---
+        ValueError
+            If ncols is less than 1
+    """
+    nrows : int = _get_number_of_rows(nplots, ncols)
+
+    return plt.subplots(
+        figsize=figsize,
+        ncols=ncols,
+        nrows=nrows,
+        squeeze=False,
+        layout=layout
+    )
+
+def _hide_unused_axes(
+        axs : np.ndarray,
+        nplots : int
+    ) -> None:
+    """Hides the subplots after the first nplots (in row-major order).
+
+    Parameters
+    ---
+        axs : np.ndarray
+            2D array of Axes
+        nplots : int
+            Number of subplots that were actually drawn
+    """
+    for ax in axs.flatten()[nplots:]:
+        ax.set_visible(False)
+
+# Data
+
+def _get_value_counts_and_sort_labels(
         series : pd.Series,
         sort_alphabetically : bool = False,
         max_categories : int = 5,
         other_label : str = 'Outros',
         dropna : bool = False,
         na_label : str = 'Sem dado',
-    ):
+    ) -> tuple[tuple, tuple]:
     """Computes the labels and counts to plot for a single column.
 
     Counts the values, drops categories with zero occurrences,
@@ -167,62 +377,292 @@ def _get_value_labels_and_counts(
         tuple[tuple, tuple]
             (labels, counts), aligned by position.
             Two empty tuples if there is nothing to count
-    """
-    value_counts_series : pd.Series = series.value_counts(dropna=dropna)
-    value_counts_series = value_counts_series[value_counts_series > 0] # ignores values with 0 incidence
-
-    value_counts_series.index = value_counts_series.index.astype(object).fillna(na_label) # replaces NA label with na_label
-    value_counts_series = _group_overflow(value_counts_series, max_categories, other_label)
-
-    value_labels : tuple
-    value_counts : tuple
-    if sort_alphabetically:
-        other_count : int | None = value_counts_series.get(other_label)
-        visible_categories : pd.Series = value_counts_series.drop(other_label, errors='ignore') # runs even if there is no other_label column
-
-        value_labels, value_counts = _sort_labels_alphabetically(visible_categories.index, visible_categories)
-
-        # others at the end
-        if other_count is not None:
-            value_labels, value_counts = (*value_labels, other_label), (*value_counts, other_count)
-    else:
-        value_labels = tuple(value_counts_series.index)
-        value_counts = tuple(value_counts_series)
-    
-    return value_labels, value_counts
-
-def _plot_arg_validation(
-        data : pd.DataFrame | None = None,
-        max_categories : int | None = None,
-        ncols : int | None = None
-):
-    """Validates arguments shared by the plotting functions.
-
-    Only the arguments that are not None are checked, so callers can
-    validate a subset of them.
-
-    Parameters
-    ---
-        data : pd.DataFrame | None, default None
-            Must have at least one row and one column
-        max_categories : int | None, default None
-            Must be 2 or higher
-        ncols : int | None, default None
-            Must be at least 1
 
     Raises
     ---
         ValueError
-            If data is empty, max_categories is less than 2 or ncols is less than 1
+            If max_categories is less than 2
     """
-    if data is not None and data.empty:
-        raise ValueError('DataFrame is empty')
-    if max_categories is not None and max_categories<2:
-        raise ValueError('max_categories must be 2 or higher')
-    if ncols is not None and ncols<1:
-        raise ValueError('ncols must be at least 1')
+    _validate_max_categories(max_categories)
+
+    value_counts_series : pd.Series = series.value_counts(dropna=dropna)
+    value_counts_series = value_counts_series[value_counts_series > 0] # ignores unobserved categories
+
+    value_counts_series.index = value_counts_series.index.astype(object).fillna(na_label)
+
+    return _group_overflow_and_sort(
+        value_counts_series,
+        sort_alphabetically,
+        max_categories,
+        other_label
+    )
+
+def _get_group_by_and_sort_labels(
+        data : pd.DataFrame,
+        group_by : Hashable,
+        target_col : Hashable,
+        sort_alphabetically : bool = False,
+        max_categories : int = 5,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado',
+    ) -> tuple[tuple, tuple]:
+    """Sums target_col per category of group_by, then groups overflow and sorts.
+
+    Categories are ordered by descending sum before grouping, so the
+    categories merged into other_label are the ones with the smallest sums.
+    Ties keep a deterministic order. Unobserved categorical levels are
+    ignored. Missing values in target_col are skipped by the sum.
+
+    Parameters
+    ---
+        data : pd.DataFrame
+            Must contain group_by and target_col, each exactly once
+        group_by : Hashable
+            Name of the column whose categories become the labels
+        target_col : Hashable
+            Name of the numeric column that is summed per category
+        sort_alphabetically : bool, default False
+            If True, labels are ordered alphabetically instead of by sum.
+            The aggregated entry is always placed last
+        max_categories : int, default 5
+            Maximum number of entries, including the aggregated one.
+            Must be 2 or higher
+        other_label : str, default 'Outros'
+            Label for the aggregated entry.
+            Should not match an existing category
+        dropna : bool, default False
+            If False, rows with a missing category are grouped into their
+            own entry (see na_label)
+        na_label : str, default 'Sem dado'
+            Label for the missing category when dropna is False.
+            Should not match an existing category
+
+    Returns
+    ---
+        tuple[tuple, tuple]
+            (labels, sums), aligned by position.
+            Two empty tuples if there is nothing to sum
+
+    Raises
+    ---
+        ValueError
+            If max_categories is less than 2
+    """
+    _validate_max_categories(max_categories)
+
+    values_series : pd.Series = data[target_col].groupby(
+        data[group_by],
+        dropna=dropna,
+        observed=True
+    ).sum()
+
+    values_series.index = values_series.index.astype(object).fillna(na_label) # replaces NA label with na_label
+    values_series = values_series.sort_values(ascending=False, kind='stable')
+
+    return _group_overflow_and_sort(
+        values_series,
+        sort_alphabetically,
+        max_categories,
+        other_label
+    )
+
+# Draw
+
+def _title_format(
+    ax : Axes,
+    title : str,
+    fontsize : int = 10,
+    fontweight : str = 'bold',
+    fontstyle = 'normal',
+    fontfamily = 'sans-serif',
+    color = '#000000'
+) -> None:
+    """Sets ax's title properties to the given arguments"""
+    ax.set_title(
+        label=title,
+        fontsize=fontsize,
+        fontweight=fontweight,
+        fontstyle=fontstyle,
+        fontfamily=fontfamily,
+        color=color
+    )
+
+def _suptitle_format(
+    fig : Figure,
+    title : str,
+    fontsize : int = 16,
+    fontweight : str = 'bold',
+    fontstyle = 'normal',
+    fontfamily = 'sans-serif',
+    color = '#000000'
+) -> None:
+    """Sets figure's suptitle properties to the given arguments"""
+    fig.suptitle(
+        t=title,
+        fontsize=fontsize,
+        fontweight=fontweight,
+        fontstyle=fontstyle,
+        fontfamily=fontfamily,
+        color=color
+    )
+
+def _visual_setup(
+    ax : Axes,
+    color_major="#000000",
+    alpha_major= 0.20,
+    color_minor="#000000",
+    alpha_minor = 0.05,
+    linestyle_major='-',
+    linestyle_minor='-',
+    facecolor="#F0F0F0"
+) -> None:
+    ax.set_facecolor(facecolor)
+    
+    ax.set_axisbelow(True)
+    ax.minorticks_on()
+
+    ax.grid(
+        True,
+        which='major',
+        color=color_major,
+        linestyle=linestyle_major,
+        alpha=alpha_major
+    )
+    ax.grid(
+        which='minor',
+        color=color_minor,
+        linestyle=linestyle_minor,
+        alpha=alpha_minor
+    )
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+
+def _draw_pie(
+        ax : Axes,
+        x : tuple | list,
+        labels : tuple | list,
+        autopct : str,
+        colors : list,
+        title : str,
+        title_args : dict = {}
+) -> None:
+    """Draws a pie chart with a title on ax.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        x : tuple | list
+            Slice values. Must be non-negative
+        labels : tuple | list
+            Slice labels, aligned with x
+        autopct : str
+            Format string for the percentage shown on each slice
+        colors : list
+            Slice colors. Cycled if shorter than x
+        title : str
+    """
+    _visual_setup(ax)
+
+    ax.pie(
+        x=x,
+        labels=labels,
+        autopct=autopct,
+        colors=colors
+    )
+    if title_args:
+        _title_format(ax, title, **title_args)
+    else:
+        _title_format(ax, title)
+
+def _draw_barh(
+        ax : Axes,
+        labels : tuple | list,
+        width : tuple | list,
+        color : list,
+        title : str,
+        xlabel : str,
+        title_args : dict = {}
+) -> None:
+    """Draws a horizontal bar chart on ax, with the first label on top.
+
+    Bars are drawn at integer positions and labeled through the tick
+    labels, so labels of any type work and labels that look the same as
+    strings (e.g. 1 and '1') stay separate bars.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        labels : tuple | list
+            Bar labels, in top-to-bottom order. Converted to strings for display
+        width : tuple | list
+            Bar lengths, aligned with labels
+        color : list
+            Bar colors. Cycled if shorter than width
+        title : str
+        xlabel : str
+            Label for the length axis
+    """
+    _visual_setup(ax)
+
+    positions : range = range(len(labels))
+    ax.barh(
+        y=positions,  # draws at position first
+        width=width,
+        color=color
+    )
+    ax.set_yticks(
+        positions,  # labels later
+        labels=[str(label) for label in labels],
+    )
+    ax.invert_yaxis()
+
+    _title_format(ax, title, **title_args)
+
+    ax.set_xlabel(xlabel)
+
+def _draw_hist(
+        ax : Axes,
+        x : pd.Series | pd.DataFrame,
+        color : str,
+        title : str,
+        title_args : dict = {}
+) -> None:
+    """TBA
+    """
+    _visual_setup(ax)
+
+    ax.hist(
+        x=x,
+        color=color
+    )
+    _title_format(ax, title, **title_args)
+
+def _draw_boxplots(
+        ax : Axes,
+        x : pd.Series,
+        label : str,
+        position : float,
+        title : str,
+        title_args : dict = {}
+) -> None:
+    """TBA"""
+    _visual_setup(ax)
+
+    ax.boxplot(
+        x=x,
+        tick_labels=[label],
+        positions=[position]
+    )
+
+    _title_format(ax, title, **title_args)
+
 
 ### Public methods
+
+### VALUE COUNTS
 
 def plot_value_counts_pie(
         data : pd.DataFrame,
@@ -232,23 +672,27 @@ def plot_value_counts_pie(
         sort_alphabetically : bool = False,
         title_prefix : str = 'Distribuição de clientes por ',
         color_dict : dict | None = None,
+        generic_colors : list | None = None,
         max_categories : int = 5,
         other_label : str = 'Outros',
         dropna : bool = False,
-        na_label : str = 'Sem dado'
-):
+        na_label : str = 'Sem dado',
+        title_args : dict = {},
+        suptitle_args : dict = {}
+) -> tuple[Figure, np.ndarray]:
     """Plots each column's value counts as a pie chart, one subplot per column.
 
     Parameters
     ---
         data : pd.DataFrame
-            One pie chart is drawn per column in data
+            One pie chart is drawn per column in data. Must not be empty
         fig_title : str, default ''
             Title for the whole figure
         figsize : tuple, default (16, 6)
         ncols : int, default 3
             Number of subplot columns. Unused subplots are hidden,
             row amount is calculated based on ncols
+            Must be at least 1
         sort_alphabetically : bool, default False
             If True, slices are ordered alphabetically by label instead of by
             frequency. The aggregated slice is always placed last
@@ -256,7 +700,9 @@ def plot_value_counts_pie(
             Text concatenated before the column name in each subplot title
         color_dict : dict | None, default None
             label:color dictionary to color slices according to their label.
-            Unmapped labels use the default matplotlib color cycle        
+            Unmapped labels use generic_colors cycle
+        generic_colors : list | none, default None
+            If None, the default matplotlib color cycle will be used
         max_categories : int, default 5
             Maximum number of slices per chart, including the aggregated slice.
             Less frequent categories are summed into other_label
@@ -275,50 +721,53 @@ def plot_value_counts_pie(
         fig : matplotlib.figure.Figure
         axs : np.ndarray
             2D array of Axes with shape (nrows, ncols)
+
+    Raises
+    ---
+        ValueError
+            If data is empty, max_categories is less than 2 or ncols is less than 1
     """
-    _plot_arg_validation(
-            data=data,
-            max_categories=max_categories,
-            ncols=ncols
-        )
+    _validation_batch_plotters(
+        data=data,
+        max_categories=max_categories,
+        ncols=ncols
+    )
 
-    generic_colors : list = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    if generic_colors is None:
+        generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-    nrows : int = _get_number_of_rows(len(data.columns), ncols)
-    fig, axs = plt.subplots(
-        figsize=figsize,
+    fig, axs = _create_fig(
+        nplots=len(data.columns),
         ncols=ncols,
-        nrows=nrows,
-        squeeze = False,
-        layout='constrained'
-        )
+        figsize=figsize
+    )
 
+    # items() yields one Series per column, even if column names are duplicated
     for (col, series), ax in zip(data.items(), axs.flatten()):
-        value_labels, value_counts = _get_value_labels_and_counts(
+        value_labels, value_counts = _get_value_counts_and_sort_labels(
             series,
-            sort_alphabetically = sort_alphabetically,
-            max_categories = max_categories,
-            other_label = other_label,
+            sort_alphabetically=sort_alphabetically,
+            max_categories=max_categories,
+            other_label=other_label,
             dropna=dropna,
             na_label=na_label
-            )
+        )
 
         ordered_colors : list = _sort_colors(color_dict, value_labels, generic_colors)
-        
-        ax.pie(
-            x = value_counts,
-            labels = value_labels,
-            autopct='%1.1f%%',
-            colors = ordered_colors
-        )
-        
-        ax.set_title(f'{title_prefix}{col}')
 
-    # hiding unused axs
-    for ax in axs.flatten()[len(data.columns):]:
-        ax.set_visible(False)
-    
-    fig.suptitle(fig_title)
+        _draw_pie(
+            ax=ax,
+            x=value_counts,
+            labels=value_labels,
+            autopct='%1.1f%%',
+            colors=ordered_colors,
+            title=f'{title_prefix}{col}',
+            title_args=title_args
+        )
+
+    _hide_unused_axes(axs, len(data.columns))
+
+    _suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 def plot_value_counts(
@@ -334,28 +783,30 @@ def plot_value_counts(
         max_categories : int = 10,
         other_label : str = 'Outros',
         dropna : bool = False,
-        na_label : str = 'Sem dado'
-):
+        na_label : str = 'Sem dado',
+        title_args : dict = {},
+        suptitle_args : dict = {}
+    ) -> tuple[Figure, np.ndarray]:
     """Plots each column's value counts as a horizontal bar chart, one subplot per column.
 
     Bars are listed top to bottom: by descending frequency, or alphabetically
-    if sort_alphabetically is True.
-    The aggregated bar is always last.
+    if sort_alphabetically is True. The aggregated bar is always last.
 
     Parameters
     ---
         data : pd.DataFrame
             One bar chart is drawn per column in data
+            Must not be empty
         fig_title : str, default ''
             Title for the whole figure
         figsize : tuple, default (16, 6)
         ncols : int, default 3
             Number of subplot columns. Unused subplots are hidden,
             row amount is calculated based on ncols
+            Must be at least 1
         sort_alphabetically : bool, default False
             If True, bars are ordered alphabetically by label instead of by
-            frequency.
-            The aggregated bar is always placed last
+            frequency. The aggregated bar is always placed last
         title_prefix : str, default 'Clientes por '
             Text concatenated before the column name in each subplot title
         xlabel : str, default 'Qtd'
@@ -383,51 +834,601 @@ def plot_value_counts(
         fig : matplotlib.figure.Figure
         axs : np.ndarray
             2D array of Axes with shape (nrows, ncols)
+
+    Raises
+    ---
+        ValueError
+            If data is empty, max_categories is less than 2 or ncols is less than 1
     """
-    
-    _plot_arg_validation(
+    _validation_batch_plotters(
         data=data,
         max_categories=max_categories,
         ncols=ncols
     )
 
-    nrows : int = _get_number_of_rows(len(data.columns), ncols)
-    fig, axs = plt.subplots(
-        figsize=figsize,
+    fig, axs = _create_fig(
+        nplots=len(data.columns),
         ncols=ncols,
-        nrows=nrows,
-        squeeze = False,
-        layout='constrained'
-        )
+        figsize=figsize
+    )
 
     for (col, series), ax in zip(data.items(), axs.flatten()):
-        value_labels, value_counts = _get_value_labels_and_counts(
+        value_labels, value_counts = _get_value_counts_and_sort_labels(
             series,
-            sort_alphabetically = sort_alphabetically,
-            max_categories = max_categories,
-            other_label = other_label,
+            sort_alphabetically=sort_alphabetically,
+            max_categories=max_categories,
+            other_label=other_label,
             dropna=dropna,
             na_label=na_label
-            )
-
-        ordered_colors : list = _sort_colors(color_dict, value_labels, [generic_color])
-        
-        # barh needs strings as labels
-        value_labels_strings : list[str] = [str(label) for label in value_labels]
-        ax.barh(
-            y = value_labels_strings,
-            width = value_counts,
-            color = ordered_colors
         )
 
-        ax.invert_yaxis()
-        
-        ax.set_title(f'{title_prefix}{col}')
-        ax.set_xlabel(xlabel)
-        
-    # hiding unused axs
-    for ax in axs.flatten()[len(data.columns):]:
-        ax.set_visible(False)
+        ordered_colors : list = _sort_colors(color_dict, value_labels, [generic_color])
+
+        _draw_barh(
+            ax=ax,
+            labels=value_labels,
+            width=value_counts,
+            color=ordered_colors,
+            title=f'{title_prefix}{col}',
+            xlabel=xlabel,
+            title_args=title_args
+        )
+
+    _hide_unused_axes(axs, len(data.columns))
+
+    _suptitle_format(fig, fig_title, **suptitle_args)
+    return fig, axs
+
+### HISTOGRAM
+
+def plot_hist(
+        data : pd.DataFrame,
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 3,
+        title_prefix : str = 'Distribuição de clientes por ',
+        color : str = 'blue',
+        title_args : dict = {},
+        suptitle_args : dict = {}
+    ) -> tuple[Figure, np.ndarray]:
+    """TBA
+    """
+    _validation_batch_plotters(
+        data=data,
+        ncols=ncols
+    )
+
+    fig, axs = _create_fig(
+        nplots=len(data.columns),
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    for (col, series), ax in zip(data.items(), axs.flatten()):
+        _draw_hist(
+            ax=ax,
+            x=series,
+            color=color,
+            title=f'{title_prefix}{col}',
+            title_args=title_args
+        )
+
+    _hide_unused_axes(axs, len(data.columns))
     
-    fig.suptitle(fig_title)
+    _suptitle_format(fig, fig_title, **suptitle_args)
+    return fig, axs
+
+def plot_alternating_hist(
+        data1 : pd.DataFrame,
+        data2 : pd.DataFrame,
+        data1_label : str = 'Sample 1',
+        data2_label : str = 'Sample 2',
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 3,
+        title_prefix : str = 'Distribuição por ',
+        color : str = 'blue',
+        title_args : dict = {},
+        suptitle_args : dict = {}
+    ) -> tuple[Figure, np.ndarray]:
+    """TBA
+    """
+    _validation_batch_plotters(
+        data=data1,
+        ncols=ncols
+    )
+    
+    _validation_batch_plotters(
+        data=data2
+    )
+
+    fig, axs = _create_fig(
+        nplots=len(data1.columns)*2,
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    
+    axs_flattened = axs.flatten()
+    ax_count : int = len(axs_flattened)
+
+    for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(0, ax_count, 2)):
+        if col1 in data2.columns:
+            _draw_hist(
+                ax=axs_flattened[ax_idx],
+                x=series1,
+                color=color,
+                title=f'{title_prefix}{col1} - {data1_label}',
+                title_args=title_args
+            )
+            _draw_hist(
+                ax=axs_flattened[ax_idx + 1],
+                x=series2,
+                color=color,
+                title=f'{title_prefix}{col2} - {data2_label}',
+                title_args=title_args
+            )
+
+    _hide_unused_axes(axs, ax_count)
+
+    _suptitle_format(fig, fig_title, **suptitle_args)
+    return fig, axs
+
+### GROUPED SUMS
+def plot_group_variable_sum_into_pie(
+        data : pd.DataFrame,
+        target_col : Hashable,
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 3,
+        sort_alphabetically : bool = False,
+        title_prefix : str = 'Agrupamento por ',
+        color_dict : dict | None = None,
+        generic_colors : list | None = None,
+        max_categories : int = 5,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado',
+        title_args : dict = {},
+        suptitle_args : dict = {}
+    ) -> tuple[Figure, np.ndarray]:
+    """Plots, for each column of data, a pie chart of target_col's sum per category.
+
+    Every column except target_col is used as a grouping variable and gets
+    its own subplot. Slice sizes are the sums of target_col within each
+    category.
+
+    Parameters
+    ---
+        data : pd.DataFrame
+            Must contain target_col, have unique column names and at least
+            one other column. One pie chart is drawn per column other than
+            target_col
+        target_col : Hashable
+            Name of the numeric column that is summed per category.
+            Missing values in this column are ignored by the sum.
+            Pie slices cannot be negative, so a category whose sum is
+            negative makes matplotlib raise a ValueError
+        fig_title : str, default ''
+            Title for the whole figure
+        figsize : tuple, default (16, 6)
+        ncols : int, default 3
+            Number of subplot columns. Must be at least 1.
+            Unused subplots are hidden, row amount is calculated based on ncols
+        sort_alphabetically : bool, default False
+            If True, slices are ordered alphabetically by label instead of by
+            summed value. The aggregated slice is always placed last
+        title_prefix : str, default 'Agrupamento por '
+            Text concatenated before the column name in each subplot title
+        color_dict : dict | None, default None
+            label:color dictionary to color slices according to their label.
+            Unmapped labels use generic_colors cycle
+        generic_colors : list | none, default None
+            If None, the default matplotlib color cycle will be used
+        max_categories : int, default 5
+            Maximum number of slices per chart, including the aggregated slice.
+            Categories with the smallest sums are merged into other_label.
+            Must be 2 or higher
+        other_label : str, default 'Outros'
+            Label for the slice that aggregates the smallest categories.
+            Should not match an existing category
+        dropna : bool, default False
+            If False, rows with a missing category are grouped into their
+            own slice (see na_label)
+        na_label : str, default 'Sem dado'
+            Label for the missing category slice when dropna is False.
+            Should not match an existing category
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols)
+
+    Raises
+    ---
+        ValueError
+            If data is empty, max_categories is less than 2, ncols is less
+            than 1, column names are duplicated, or target_col is missing,
+            non-numeric or the only column
+    """
+    _validation_batch_plotters(
+        data=data,
+        max_categories=max_categories,
+        ncols=ncols
+    )
+    _validation_batch_groupers(
+        data=data,
+        target_col=target_col
+    )
+
+    group_cols : list = [col for col in data.columns if col != target_col]
+
+    if generic_colors is None:
+            generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+    fig, axs = _create_fig(
+        nplots=len(group_cols),
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    for col, ax in zip(group_cols, axs.flatten()):
+        value_labels, value_sums = _get_group_by_and_sort_labels(
+            data[[col, target_col]],
+            group_by=col,
+            target_col=target_col,
+            sort_alphabetically=sort_alphabetically,
+            max_categories=max_categories,
+            other_label=other_label,
+            dropna=dropna,
+            na_label=na_label
+        )
+
+        ordered_colors : list = _sort_colors(color_dict, value_labels, generic_colors)
+
+        _draw_pie(
+            ax=ax,
+            x=value_sums,
+            labels=value_labels,
+            autopct='%1.1f%%',
+            colors=ordered_colors,
+            title=f'{title_prefix}{col}',
+            title_args=title_args
+        )
+
+    _hide_unused_axes(axs, len(group_cols))
+
+    _suptitle_format(fig, fig_title, **suptitle_args)
+    return fig, axs
+
+def plot_group_variable_sum_into_barh(
+        data : pd.DataFrame,
+        target_col : Hashable,
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 3,
+        sort_alphabetically : bool = False,
+        title_prefix : str = 'Agrupamento por ',
+        xlabel : str = 'Qtd',
+        color_dict : dict | None = None,
+        generic_color : str = 'blue',
+        max_categories : int = 10,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado',
+        title_args : dict = {},
+        suptitle_args : dict = {}
+    ) -> tuple[Figure, np.ndarray]:
+    """Plots, for each column of data, a horizontal bar chart of target_col's sum per category.
+
+    Every column except target_col is used as a grouping variable and gets
+    its own subplot. Bar lengths are the sums of target_col within each
+    category. Bars are listed top to bottom: by descending sum, or
+    alphabetically if sort_alphabetically is True. The aggregated bar is
+    always last.
+
+    Parameters
+    ---
+        data : pd.DataFrame
+            Must contain target_col, have unique column names and at least
+            one other column. One bar chart is drawn per column other than
+            target_col
+        target_col : Hashable
+            Name of the numeric column that is summed per category.
+            Missing values in this column are ignored by the sum
+        fig_title : str, default ''
+            Title for the whole figure
+        figsize : tuple, default (16, 6)
+        ncols : int, default 3
+            Number of subplot columns. Must be at least 1.
+            Unused subplots are hidden, row amount is calculated based on ncols
+        sort_alphabetically : bool, default False
+            If True, bars are ordered alphabetically by label instead of by
+            summed value. The aggregated bar is always placed last
+        title_prefix : str, default 'Agrupamento por '
+            Text concatenated before the column name in each subplot title
+        xlabel : str, default 'Qtd'
+            Label for the value axis of every subplot
+        color_dict : dict | None, default None
+            label:color dictionary to color bars according to their label.
+            Unmapped labels use generic_color
+        generic_color : str, default 'blue'
+            Color for every bar whose label is not in color_dict
+        max_categories : int, default 10
+            Maximum number of bars per chart, including the aggregated bar.
+            Categories with the smallest sums are merged into other_label.
+            Must be 2 or higher
+        other_label : str, default 'Outros'
+            Label for the bar that aggregates the smallest categories.
+            Should not match an existing category
+        dropna : bool, default False
+            If False, rows with a missing category are grouped into their
+            own bar (see na_label)
+        na_label : str, default 'Sem dado'
+            Label for the missing category bar when dropna is False.
+            Should not match an existing category
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols)
+
+    Raises
+    ---
+        ValueError
+            If data is empty, max_categories is less than 2, ncols is less
+            than 1, column names are duplicated, or target_col is missing,
+            non-numeric or the only column
+    """
+    _validation_batch_plotters(
+        data=data,
+        max_categories=max_categories,
+        ncols=ncols
+    )
+    _validation_batch_groupers(
+        data=data,
+        target_col=target_col
+    )
+
+    group_cols : list = [col for col in data.columns if col != target_col]
+
+    fig, axs = _create_fig(
+        nplots=len(group_cols),
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    for col, ax in zip(group_cols, axs.flatten()):
+        value_labels, value_sums = _get_group_by_and_sort_labels(
+            data[[col, target_col]],
+            group_by=col,
+            target_col=target_col,
+            sort_alphabetically=sort_alphabetically,
+            max_categories=max_categories,
+            other_label=other_label,
+            dropna=dropna,
+            na_label=na_label
+        )
+
+        ordered_colors : list = _sort_colors(color_dict, value_labels, [generic_color])
+
+        _draw_barh(
+            ax=ax,
+            labels=value_labels,
+            width=value_sums,
+            color=ordered_colors,
+            title=f'{title_prefix}{col}',
+            xlabel=xlabel,
+            title_args=title_args
+        )
+
+    _hide_unused_axes(axs, len(group_cols))
+
+    _suptitle_format(fig, fig_title, **suptitle_args)
+    return fig, axs
+
+def plot_alternating_value_counts_barh(
+        data1 : pd.DataFrame,
+        data2 : pd.DataFrame,
+        data1_label : str = 'Sample 1',
+        data2_label : str = 'Sample 2',
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 2,
+        sort_alphabetically : bool = False,
+        title_prefix : str = 'Clientes por ',
+        xlabel : str = 'Qtd',
+        color_dict : dict | None = None,
+        generic_color : str = 'blue',
+        max_categories : int = 10,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado',
+        title_args : dict = {},
+        suptitle_args : dict = {}
+    ) -> tuple[Figure, np.ndarray]:
+    """Plots, for each column of data1 and data2 in alternation,
+    a horizontal bar chart of value counts. Good for comparisons.
+
+    Parameters
+    ---
+        data1 : pd.DataFrame
+            One bar chart is drawn per column in data1
+            Must not be empty
+        data2 : pd.DataFrame
+            One bar chart is drawn per column in data2
+            Must not be empty
+        fig_title : str, default ''
+            Title for the whole figure
+        figsize : tuple, default (16, 6)
+        ncols : int, default 2
+            Number of subplot columns. Must be at least 1.
+            Unused subplots are hidden, row amount is calculated based on ncols
+            For ease of reading, it is reccomended to be an even value
+        sort_alphabetically : bool, default False
+            If True, bars are ordered alphabetically by label instead of by
+            summed value. The aggregated bar is always placed last
+        title_prefix : str, default 'Agrupamento por '
+            Text concatenated before the column name in each subplot title
+        xlabel : str, default 'Qtd'
+            Label for the value axis of every subplot
+        color_dict : dict | None, default None
+            label:color dictionary to color bars according to their label.
+            Unmapped labels use generic_color
+        generic_color : str, default 'blue'
+            Color for every bar whose label is not in color_dict
+        max_categories : int, default 10
+            Maximum number of bars per chart, including the aggregated bar.
+            Categories with the smallest sums are merged into other_label.
+            Must be 2 or higher
+        other_label : str, default 'Outros'
+            Label for the bar that aggregates the smallest categories.
+            Should not match an existing category
+        dropna : bool, default False
+            If False, rows with a missing category are grouped into their
+            own bar (see na_label)
+        na_label : str, default 'Sem dado'
+            Label for the missing category bar when dropna is False.
+            Should not match an existing category
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols)
+
+    Raises
+    ---
+        ValueError
+            If data1 or data2 is empty, max_categories is less than 2, ncols is less
+            than 1, column names are duplicated, or target_col is missing,
+            non-numeric or the only column
+    """
+    _validation_batch_plotters(
+        data=data1,
+        max_categories=max_categories,
+        ncols=ncols
+        )
+    _validation_batch_plotters(
+        data=data2
+    )
+
+    fig, axs = _create_fig(
+        nplots=len(data1.columns)*2,
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    axs_flattened = axs.flatten()
+    ax_count : int = len(axs_flattened)
+
+    for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(0, ax_count, 2)):
+        if col1 in data2.columns:
+            value_labels1, value_counts1 = _get_value_counts_and_sort_labels(
+                series1,
+                sort_alphabetically=sort_alphabetically,
+                max_categories=max_categories,
+                other_label=other_label,
+                dropna=dropna,
+                na_label=na_label
+            )
+
+            ordered_colors : list = _sort_colors(color_dict, value_labels1, [generic_color])
+
+            _draw_barh(
+                ax=axs_flattened[ax_idx],
+                labels=value_labels1,
+                width=value_counts1,
+                color=ordered_colors,
+                title=f'{title_prefix}{col1} - {data1_label}',
+                xlabel=xlabel,
+                title_args=title_args
+            )
+
+            value_labels2, value_counts2 = _get_value_counts_and_sort_labels(
+                series2,
+                sort_alphabetically=sort_alphabetically,
+                max_categories=max_categories,
+                other_label=other_label,
+                dropna=dropna,
+                na_label=na_label
+            )
+
+            ordered_colors : list = _sort_colors(color_dict, value_labels2, [generic_color])
+
+            _draw_barh(
+                ax=axs_flattened[ax_idx + 1],
+                labels=value_labels2,
+                width=value_counts2,
+                color=ordered_colors,
+                title=f'{title_prefix}{col2} - {data2_label}',
+                xlabel=xlabel,
+                title_args=title_args
+            )
+
+
+
+    _hide_unused_axes(axs, ax_count)
+
+    _suptitle_format(fig, fig_title, **suptitle_args)
+    return fig, axs
+
+def plot_comparing_box(
+        data1 : pd.DataFrame,
+        data2 : pd.DataFrame,
+        data1_label : str = 'Sample 1',
+        data2_label : str = 'Sample 2',
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        ncols : int = 2,
+        title_prefix : str = 'Clientes por ',
+        max_categories : int = 10,
+        title_args : dict = {},
+        suptitle_args : dict = {}
+    ) -> tuple[Figure, np.ndarray]:
+    """TBA
+    """
+    _validation_batch_plotters(
+        data=data1,
+        max_categories=max_categories,
+        ncols=ncols
+        )
+    _validation_batch_plotters(
+        data=data2
+    )
+
+    fig, axs = _create_fig(
+        nplots=len(data1.columns),
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    axs_flattened = axs.flatten()
+    ax_count : int = len(axs_flattened)
+
+    for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(ax_count)):
+        if col1 in data2.columns:
+            _draw_boxplots(
+                ax=axs_flattened[ax_idx],
+                x=series1,
+                label=data1_label,
+                position=0,
+                title=f'{title_prefix}{col1}',
+                title_args=title_args
+            )
+
+            _draw_boxplots(
+                ax=axs_flattened[ax_idx],
+                x=series2,
+                label=data2_label,
+                position=1,
+                title=f'{title_prefix}{col2}',
+                title_args=title_args
+            )
+
+    _hide_unused_axes(axs, ax_count)
+
+    _suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
