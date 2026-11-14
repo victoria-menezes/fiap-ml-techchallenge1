@@ -5,5 +5,4 @@ createfolders.bat
 uv.lock
 __pycache__/
 .pytest_cache/
-pyproject.toml
 data
