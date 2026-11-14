@@ -90,7 +90,7 @@ def get_feature_names(processed:bool=False) -> list[str]:
         return data_loader.format_column_names(final_cols)
     return final_cols
 
-def get_preprocessing_pipeline() -> BaseEstimator:
+def get_preprocessing_pipeline(scale : bool = False) -> BaseEstimator:
     final_cols = get_feature_names(processed=True)
 
     keeper = ColumnTransformer(
@@ -100,7 +100,6 @@ def get_preprocessing_pipeline() -> BaseEstimator:
     )
 
     onehot_cols = [
-        'paperless_billing',
         'payment_method',
         'internet_service',
         'contract'
@@ -111,6 +110,7 @@ def get_preprocessing_pipeline() -> BaseEstimator:
         'online_backup',
         'device_protection',
         'tech_support',
+        'paperless_billing'
     ]
 
     column_transformer_initial = ColumnTransformer(
