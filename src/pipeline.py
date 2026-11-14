@@ -40,7 +40,7 @@ class ToFloat(BaseEstimator, TransformerMixin):
                 X_copy[col] = series.str.lower()
                 X_copy[col] = X_copy[col].replace({'yes':1, 'no':0}).astype(float)
             elif pd.api.types.is_bool_dtype(series) or pd.api.types.is_integer_dtype(series):
-                X[col] = series.astype(float)
+                X_copy[col] = series.astype(float)
         return X_copy
         
     def get_feature_names_out(self, input_features=None):
