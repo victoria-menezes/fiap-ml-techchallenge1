@@ -9,7 +9,7 @@ from sklearn.compose import (
 )
 from sklearn.pipeline import Pipeline
 from sklearn.base import BaseEstimator, TransformerMixin
-
+from sklearn.preprocessing import StandardScaler
 # custom modules
 import data_loader
 
@@ -93,25 +93,30 @@ def get_feature_names(processed:bool=False) -> list[str]:
 def get_preprocessing_pipeline(scale : bool = False) -> BaseEstimator:
     final_cols = get_feature_names(processed=True)
 
-    keeper = ColumnTransformer(
-        transformers=[('keep', 'passthrough', final_cols)],
-        remainder='drop',
-        verbose_feature_names_out=False
-    )
-
-    onehot_cols = [
+    onehot_cols : list [str] = [
         'payment_method',
         'internet_service',
         'contract'
     ]
 
-    yesno_cols = [
+    yesno_cols : list [str] = [
         'online_security',
         'online_backup',
         'device_protection',
         'tech_support',
         'paperless_billing'
     ]
+
+    scale_cols : list [str] = [
+        'tenure_months',
+        'monthly_charges'
+    ]
+    
+    keeper = ColumnTransformer(
+        transformers=[('keep', 'passthrough', final_cols)],
+        remainder='drop',
+        verbose_feature_names_out=False
+    )
 
     column_transformer_initial = ColumnTransformer(
         transformers=[
@@ -125,9 +130,29 @@ def get_preprocessing_pipeline(scale : bool = False) -> BaseEstimator:
         verbose_feature_names_out=False
     )
 
-    return Pipeline(steps=[
-            ('format columns names', ColumnNameFormatter()),
-            ('filter columns', keeper),
-            ('encode and collapse no', column_transformer_initial),
-            ('all to float', ToFloat())
-        ]).set_output(transform='pandas')
+    steps : list = [
+        ('format columns names', ColumnNameFormatter()),
+        ('filter columns', keeper),
+        ('encode and collapse no', column_transformer_initial),
+        ('all to float', ToFloat())
+    ]
+
+    if scale:
+        steps.append((
+            'scale columns',
+                ColumnTransformer(
+                    [
+                        ('standard scaler', StandardScaler(), scale_cols)
+                    ],
+                    remainder='passthrough',
+                    verbose_feature_names_out=False
+               )
+        ))
+
+    return Pipeline(steps=steps).set_output(transform='pandas')
+
+def build_model_pipeline(estimator, scale:bool=False) -> Pipeline:
+    return Pipeline([
+            ('preprocessing', get_preprocessing_pipeline(scale=scale)),
+            ('model', estimator)
+        ])
