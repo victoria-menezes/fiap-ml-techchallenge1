@@ -95,7 +95,7 @@ def export_churn_data(
 
     
 
-def format_column_names(cols : list[str]) -> list[str]:
+def format_column_names(cols : list[str] | pd.Index) -> list[str]:
     """Returns a list with the renamed columns in order"""
     new_cols : list[str] = []
     for col in cols:
@@ -103,6 +103,10 @@ def format_column_names(cols : list[str]) -> list[str]:
         new_cols += [new_col]
 
     return new_cols
+
+def format_dataframe_column_names(df : pd.DataFrame):
+    new_cols = format_column_names(df.columns)
+    return df.set_axis(new_cols, axis=1)
 
 def preprocess_data(df: pd.DataFrame):
     pass
