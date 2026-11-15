@@ -280,7 +280,7 @@ def _sort_colors(
             generic_color_count += 1
     return ordered_colors
 
-def _create_fig(
+def create_fig(
         nplots : int,
         ncols : int,
         figsize : tuple,
@@ -488,7 +488,7 @@ def _title_format(
         color=color
     )
 
-def _suptitle_format(
+def fig_suptitle_format(
     fig : Figure,
     title : str,
     fontsize : int = 16,
@@ -659,8 +659,85 @@ def _draw_boxplots(
 
     _title_format(ax, title, **title_args)
 
+def _draw_line(
+        ax : Axes,
+        x : pd.Series | np.ndarray,
+        y : pd.Series | np.ndarray,
+        xlabel : str,
+        ylabel : str,
+        title : str,
+        color : str,
+        title_args : dict = {}
+    ) -> None:
+    _visual_setup(ax)
+
+    ax.plot(x, y, color=color)
+
+    _title_format(
+        ax,
+        title,
+        **title_args
+    )
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
 
 ### Public methods
+
+def plot_line_chart(
+        x : pd.Series | np.ndarray,
+        y : pd.Series | np.ndarray,
+        xlabel : str,
+        ylabel : str,
+        color : str,
+        ax : Axes | None = None,
+        fig_title : str = '',
+        figsize : tuple = (16, 6),
+        title : str = '',
+        title_args : dict = {},
+        suptitle_args : dict = {}
+    ):
+
+    if title == '':
+        title = f'{xlabel} por {ylabel}'
+    
+    if ax:
+        _draw_line(
+            ax=ax,
+            x=x,
+            y=y,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            title=title,
+            color=color,
+            title_args=title_args
+        )
+
+        return ax
+    else:
+        fig, axs = create_fig(
+            1,
+            1,
+            figsize    
+        )
+
+        ax = axs.flatten()[0]
+        
+        _draw_line(
+            ax=ax,
+            x=x,
+            y=y,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            title=title,
+            color=color,
+            title_args=title_args
+        )
+
+        _hide_unused_axes(axs, len(x))
+        fig_suptitle_format(fig, fig_title, **suptitle_args)
+
+        return fig, axs
 
 ### VALUE COUNTS
 
@@ -736,7 +813,7 @@ def plot_value_counts_pie(
     if generic_colors is None:
         generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-    fig, axs = _create_fig(
+    fig, axs = create_fig(
         nplots=len(data.columns),
         ncols=ncols,
         figsize=figsize
@@ -766,8 +843,7 @@ def plot_value_counts_pie(
         )
 
     _hide_unused_axes(axs, len(data.columns))
-
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    fig_suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 def plot_value_counts(
@@ -846,7 +922,7 @@ def plot_value_counts(
         ncols=ncols
     )
 
-    fig, axs = _create_fig(
+    fig, axs = create_fig(
         nplots=len(data.columns),
         ncols=ncols,
         figsize=figsize
@@ -876,7 +952,7 @@ def plot_value_counts(
 
     _hide_unused_axes(axs, len(data.columns))
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    fig_suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 ### HISTOGRAM
@@ -898,7 +974,7 @@ def plot_hist(
         ncols=ncols
     )
 
-    fig, axs = _create_fig(
+    fig, axs = create_fig(
         nplots=len(data.columns),
         ncols=ncols,
         figsize=figsize
@@ -915,7 +991,7 @@ def plot_hist(
 
     _hide_unused_axes(axs, len(data.columns))
     
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    fig_suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 def plot_alternating_hist(
@@ -942,7 +1018,7 @@ def plot_alternating_hist(
         data=data2
     )
 
-    fig, axs = _create_fig(
+    fig, axs = create_fig(
         nplots=len(data1.columns)*2,
         ncols=ncols,
         figsize=figsize
@@ -971,7 +1047,7 @@ def plot_alternating_hist(
 
     _hide_unused_axes(axs, ax_count)
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    fig_suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 ### GROUPED SUMS
@@ -1067,7 +1143,7 @@ def plot_group_variable_sum_into_pie(
     if generic_colors is None:
             generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-    fig, axs = _create_fig(
+    fig, axs = create_fig(
         nplots=len(group_cols),
         ncols=ncols,
         figsize=figsize
@@ -1099,7 +1175,7 @@ def plot_group_variable_sum_into_pie(
 
     _hide_unused_axes(axs, len(group_cols))
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    fig_suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 def plot_group_variable_sum_into_barh(
@@ -1194,7 +1270,7 @@ def plot_group_variable_sum_into_barh(
 
     group_cols : list = [col for col in data.columns if col != target_col]
 
-    fig, axs = _create_fig(
+    fig, axs = create_fig(
         nplots=len(group_cols),
         ncols=ncols,
         figsize=figsize
@@ -1226,7 +1302,7 @@ def plot_group_variable_sum_into_barh(
 
     _hide_unused_axes(axs, len(group_cols))
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    fig_suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 def plot_alternating_value_counts_barh(
@@ -1315,7 +1391,7 @@ def plot_alternating_value_counts_barh(
         data=data2
     )
 
-    fig, axs = _create_fig(
+    fig, axs = create_fig(
         nplots=len(data1.columns)*2,
         ncols=ncols,
         figsize=figsize
@@ -1372,7 +1448,7 @@ def plot_alternating_value_counts_barh(
 
     _hide_unused_axes(axs, ax_count)
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    fig_suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
 
 def plot_comparing_box(
@@ -1399,7 +1475,7 @@ def plot_comparing_box(
         data=data2
     )
 
-    fig, axs = _create_fig(
+    fig, axs = create_fig(
         nplots=len(data1.columns),
         ncols=ncols,
         figsize=figsize
@@ -1430,5 +1506,5 @@ def plot_comparing_box(
 
     _hide_unused_axes(axs, ax_count)
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    fig_suptitle_format(fig, fig_title, **suptitle_args)
     return fig, axs
