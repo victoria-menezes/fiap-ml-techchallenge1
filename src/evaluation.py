@@ -149,7 +149,7 @@ def plot_roc(
         y_proba,
         ax,
         label:str,
-        plot_line_args:dict | None = None
+        plot_line_kwargs:dict | None = None
     ):
     y_true, y_proba = _validate_binary(y_true, y_proba)
 
@@ -161,7 +161,8 @@ def plot_roc(
         'xlabel':'False Positive Rates',
         'ylabel':'True Positive Rates',
         'color':'#004f8f',
-        **(plot_line_args or {})
+        'label':label,
+        **(plot_line_kwargs or {})
     }
 
     plot_line_chart(
@@ -179,25 +180,26 @@ def plot_pr(
         y_proba,
         ax,
         label:str,
-        plot_line_args:dict | None = None
+        plot_line_kwargs:dict | None = None
     ):
     y_true, y_proba = _validate_binary(y_true, y_proba)
     
     precision_rates, recall_rates, thresholds = precision_recall_curve(y_true, y_proba)
     ap = average_precision_score(y_true, y_proba)
 
-    args : dict = {
+    kwargs : dict = {
         'title':f'Precision-Recall (Average Precision = {ap:.4f})',
         'xlabel':'Recall',
         'ylabel':'Precision',
         'color':'#004f8f',
-        **(plot_line_args or {})
+        'label':label,
+        **(plot_line_kwargs or {})
     }
     plot_line_chart(
         ax=ax,
         x=recall_rates,
         y=precision_rates,
-        **args
+        **kwargs
     )
 
     ax.set_xlim([0.0, 1.0])
@@ -206,7 +208,8 @@ def plot_pr(
 def plot_roc_pr(
         y_true,
         y_proba,
-        plot_line_args: dict | None = None,
+        label:str,
+        plot_line_kwargs: dict | None = None,
         suptitle_args: dict | None = None
 ):
     fig, axs = create_fig(
@@ -221,16 +224,16 @@ def plot_roc_pr(
         y_true,
         y_proba,
         ax=axs_flattened[0],
-        label='',
-        plot_line_args=plot_line_args
+        label=label,
+        plot_line_kwargs=plot_line_kwargs
     )
 
     plot_pr(
         y_true,
         y_proba,
         ax=axs_flattened[1],
-        label='',
-        plot_line_args=plot_line_args
+        label=label,
+        plot_line_kwargs=plot_line_kwargs
     )
 
     fig_suptitle_format(
