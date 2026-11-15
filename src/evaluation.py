@@ -166,7 +166,7 @@ def plot_roc_pr(
     fig_suptitle_format(
         fig,
         title='ROC and PR curves',
-        **suptitle_args
+        **{suptitle_args or {}}
     )
 
 def plot_roc_pr_old(
