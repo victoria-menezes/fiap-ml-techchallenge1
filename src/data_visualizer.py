@@ -7,9 +7,7 @@ from matplotlib.figure import Figure
 
 import numpy as np
 
-### Private methods
-
-TITLE_AX_DEFAULTS : dict = {
+defaults_ax_title : dict = {
     'fontsize' : 10,
     'fontweight' : 'bold',
     'fontstyle' : 'normal',
@@ -17,13 +15,15 @@ TITLE_AX_DEFAULTS : dict = {
     'color' : '#000000'
 }
 
-TITLE_FIG_DEFAULTS : dict = {
+defaults_fig_title : dict = {
     'fontsize' : 14,
     'fontweight' : 'bold',
     'fontstyle' : 'normal',
     'fontfamily' : 'sans-serif',
     'color' : '#000000'
 }
+
+### Private methods
 
 # Validators
 
@@ -488,39 +488,29 @@ def _get_group_by_and_sort_labels(
 def _title_format(
     ax : Axes,
     title : str,
-    fontsize : int = 10,
-    fontweight : str = 'bold',
-    fontstyle = 'normal',
-    fontfamily = 'sans-serif',
-    color = '#000000'
+    **kwargs
 ) -> None:
     """Sets ax's title properties to the given arguments"""
+
+    final_args : dict = {**defaults_ax_title, **kwargs}
+
     ax.set_title(
         label=title,
-        fontsize=fontsize,
-        fontweight=fontweight,
-        fontstyle=fontstyle,
-        fontfamily=fontfamily,
-        color=color
+        **final_args
     )
 
-def _suptitle_format(
+def fig_suptitle_format(
     fig : Figure,
     title : str,
-    fontsize : int = 16,
-    fontweight : str = 'bold',
-    fontstyle = 'normal',
-    fontfamily = 'sans-serif',
-    color = '#000000'
+    **kwargs
 ) -> None:
     """Sets figure's suptitle properties to the given arguments"""
+
+    final_args : dict = {**defaults_fig_title, **kwargs}
+
     fig.suptitle(
         t=title,
-        fontsize=fontsize,
-        fontweight=fontweight,
-        fontstyle=fontstyle,
-        fontfamily=fontfamily,
-        color=color
+        **final_args
     )
 
 def _visual_setup(
@@ -589,7 +579,7 @@ def _draw_pie(
         colors=colors
     )
 
-    _title_format(ax, title, **{**TITLE_AX_DEFAULTS, **(title_args or {})})
+    _title_format(ax, title, **(title_args or {}))
 
 
 def _draw_barh(
@@ -634,7 +624,7 @@ def _draw_barh(
     )
     ax.invert_yaxis()
 
-    _title_format(ax, title, **{**TITLE_AX_DEFAULTS, **(title_args or {})})
+    _title_format(ax, title, **(title_args or {}))
 
     ax.set_xlabel(xlabel)
 
@@ -653,7 +643,7 @@ def _draw_hist(
         x=x,
         color=color
     )
-    _title_format(ax, title, **{**TITLE_AX_DEFAULTS, **(title_args or {})})
+    _title_format(ax, title, **(title_args or {}))
 
 def _draw_boxplots(
         ax : Axes,
@@ -672,7 +662,7 @@ def _draw_boxplots(
         positions=[position]
     )
 
-    _title_format(ax, title, **{**TITLE_AX_DEFAULTS, **(title_args or {})})
+    _title_format(ax, title, **(title_args or {}))
 
 
 ### Public methods
@@ -782,7 +772,7 @@ def plot_value_counts_pie(
 
     _hide_unused_axes(axs, len(data.columns))
 
-    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
+    fig_suptitle_format(fig, fig_title, **(suptitle_args or {}))
     return fig, axs
 
 def plot_value_counts(
@@ -891,7 +881,7 @@ def plot_value_counts(
 
     _hide_unused_axes(axs, len(data.columns))
 
-    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
+    fig_suptitle_format(fig, fig_title, **(suptitle_args or {}))
     return fig, axs
 
 ### HISTOGRAM
@@ -930,7 +920,7 @@ def plot_hist(
 
     _hide_unused_axes(axs, len(data.columns))
     
-    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
+    fig_suptitle_format(fig, fig_title, **(suptitle_args or {}))
     return fig, axs
 
 def plot_alternating_hist(
@@ -986,7 +976,7 @@ def plot_alternating_hist(
 
     _hide_unused_axes(axs, ax_count)
 
-    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
+    fig_suptitle_format(fig, fig_title, **(suptitle_args or {}))
     return fig, axs
 
 ### GROUPED SUMS
@@ -1114,7 +1104,7 @@ def plot_group_variable_sum_into_pie(
 
     _hide_unused_axes(axs, len(group_cols))
 
-    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
+    fig_suptitle_format(fig, fig_title, **(suptitle_args or {}))
     return fig, axs
 
 def plot_group_variable_sum_into_barh(
@@ -1241,7 +1231,7 @@ def plot_group_variable_sum_into_barh(
 
     _hide_unused_axes(axs, len(group_cols))
 
-    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
+    fig_suptitle_format(fig, fig_title, **(suptitle_args or {}))
     return fig, axs
 
 def plot_alternating_value_counts_barh(
@@ -1387,7 +1377,7 @@ def plot_alternating_value_counts_barh(
 
     _hide_unused_axes(axs, ax_count)
 
-    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
+    fig_suptitle_format(fig, fig_title, **(suptitle_args or {}))
     return fig, axs
 
 def plot_comparing_box(
@@ -1445,5 +1435,5 @@ def plot_comparing_box(
 
     _hide_unused_axes(axs, ax_count)
 
-    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
+    fig_suptitle_format(fig, fig_title, **(suptitle_args or {}))
     return fig, axs
