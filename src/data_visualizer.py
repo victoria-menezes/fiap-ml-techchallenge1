@@ -506,23 +506,33 @@ def fig_suptitle_format(
 ) -> None:
     """Sets figure's suptitle properties to the given arguments"""
 
-    final_args : dict = {**defaults_fig_title, **kwargs}
+    final_kwargs : dict = {**defaults_fig_title, **kwargs}
 
     fig.suptitle(
         t=title,
-        **final_args
+        **final_kwargs
     )
 
 def _visual_setup(
     ax : Axes,
-    color_major="#000000",
-    alpha_major= 0.20,
-    color_minor="#000000",
-    alpha_minor = 0.05,
-    linestyle_major='-',
-    linestyle_minor='-',
+    kwargs_major : dict | None = None,
+    kwargs_minor : dict | None = None,
     facecolor="#F0F0F0"
 ) -> None:
+    grid_major_args : dict = {
+        'color':'#000000',
+        'alpha':0.20,
+        'linestyle':'-',
+        **(kwargs_major or {})
+    }
+
+    grid_minor_args : dict = {
+        'color':'#000000',
+        'alpha':0.05,
+        'linestyle':'-',
+        **(kwargs_minor or {})
+    }
+    
     ax.set_facecolor(facecolor)
     
     ax.set_axisbelow(True)
@@ -531,15 +541,11 @@ def _visual_setup(
     ax.grid(
         True,
         which='major',
-        color=color_major,
-        linestyle=linestyle_major,
-        alpha=alpha_major
+        **grid_major_args
     )
     ax.grid(
         which='minor',
-        color=color_minor,
-        linestyle=linestyle_minor,
-        alpha=alpha_minor
+        **grid_minor_args
     )
 
     ax.spines['top'].set_visible(False)
@@ -550,10 +556,11 @@ def _draw_pie(
         ax : Axes,
         x : tuple | list,
         labels : tuple | list,
-        autopct : str,
-        colors : list,
         title : str,
-        title_args : dict | None = None
+        colors : list[str],
+        pie_kwargs : dict | None = None,
+        title_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
 ) -> None:
     """Draws a pie chart with a title on ax.
 
@@ -570,26 +577,33 @@ def _draw_pie(
             Slice colors. Cycled if shorter than x
         title : str
     """
-    _visual_setup(ax)
+    _visual_setup(ax, **(setup_kwargs or {}))
+
+    pie_kwargs_all : dict = {
+        'colors':colors,
+        'autopct':'%1.1f%%',
+        **(pie_kwargs or {})
+    }
 
     ax.pie(
         x=x,
         labels=labels,
-        autopct=autopct,
-        colors=colors
+        **(pie_kwargs_all or {})
     )
 
-    _title_format(ax, title, **(title_args or {}))
+    _title_format(ax, title, **(title_kwargs or {}))
 
 
 def _draw_barh(
         ax : Axes,
         labels : tuple | list,
         width : tuple | list,
-        color : list,
         title : str,
         xlabel : str,
-        title_args : dict | None = None
+        colors : list[str],
+        barh_kwargs_all : dict | None = None,
+        title_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
 ) -> None:
     """Draws a horizontal bar chart on ax, with the first label on top.
 
@@ -610,13 +624,17 @@ def _draw_barh(
         xlabel : str
             Label for the length axis
     """
-    _visual_setup(ax)
+    _visual_setup(ax, **(setup_kwargs or {}))
+    barh_kwargs_all = {
+        'width':width,
+        'color':colors,
+        **(barh_kwargs_all or {})
+    }
 
     positions : range = range(len(labels))
     ax.barh(
         y=positions,  # draws at position first
-        width=width,
-        color=color
+        **barh_kwargs_all
     )
     ax.set_yticks(
         positions,  # labels later
@@ -624,7 +642,7 @@ def _draw_barh(
     )
     ax.invert_yaxis()
 
-    _title_format(ax, title, **(title_args or {}))
+    _title_format(ax, title, **(title_kwargs or {}))
 
     ax.set_xlabel(xlabel)
 
@@ -633,36 +651,47 @@ def _draw_hist(
         x : pd.Series | pd.DataFrame,
         color : str,
         title : str,
-        title_args : dict | None = None
+        hist_kwargs : dict | None = None,
+        title_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
 ) -> None:
     """TBA
     """
-    _visual_setup(ax)
+    _visual_setup(ax, **(setup_kwargs or {}))
+    hist_kwargs_all : dict = {
+        'color': color,
+        **(hist_kwargs or {})
+    }
 
     ax.hist(
         x=x,
-        color=color
+        **hist_kwargs_all
     )
-    _title_format(ax, title, **(title_args or {}))
+    _title_format(ax, title, **(title_kwargs or {}))
 
-def _draw_boxplots(
+def _draw_boxplot(
         ax : Axes,
         x : pd.Series,
         label : str,
         position : float,
         title : str,
-        title_args : dict | None = None
+        boxplot_kwargs : dict | None = None,
+        title_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
 ) -> None:
     """TBA"""
-    _visual_setup(ax)
-
+    _visual_setup(ax, **(setup_kwargs or {}))
+    boxplot_kwargs_all : dict = {
+        'tick_labels':[label],
+        'positions':[position],
+        **(boxplot_kwargs or {})
+    }
     ax.boxplot(
         x=x,
-        tick_labels=[label],
-        positions=[position]
+        **boxplot_kwargs_all
     )
 
-    _title_format(ax, title, **(title_args or {}))
+    _title_format(ax, title, **(title_kwargs or {}))
 
 def _draw_line(
         ax : Axes,
@@ -672,16 +701,28 @@ def _draw_line(
         ylabel : str,
         title : str,
         color : str,
-        title_args : dict = {}
+        label : str | None = None,
+        line_kwargs : dict | None = None,
+        title_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
     ) -> None:
-    _visual_setup(ax)
-
-    ax.plot(x, y, color=color)
+    _visual_setup(ax, **(setup_kwargs or {}))
+    line_kwargs_all : dict = {
+        'color':color,
+        'label':label,
+        **(line_kwargs or {})
+        }
+    
+    ax.plot(
+        x,
+        y,
+        **line_kwargs_all
+    )
 
     _title_format(
         ax,
         title,
-        **title_args
+        **(title_kwargs or {})
     )
 
     ax.set_xlabel(xlabel)
@@ -694,6 +735,7 @@ def plot_line_chart(
         y : pd.Series | np.ndarray,
         xlabel : str,
         ylabel : str,
+        label : str,
         color : str,
         ax : Axes | None = None,
         fig_title : str = '',
@@ -713,9 +755,10 @@ def plot_line_chart(
             y=y,
             xlabel=xlabel,
             ylabel=ylabel,
+            label=label,
             title=title,
             color=color,
-            title_args=title_args
+            title_kwargs=title_args
         )
 
         return ax
@@ -736,7 +779,7 @@ def plot_line_chart(
             ylabel=ylabel,
             title=title,
             color=color,
-            title_args=title_args
+            title_kwargs=title_args
         )
 
         _hide_unused_axes(axs, len(x))
@@ -841,10 +884,9 @@ def plot_value_counts_pie(
             ax=ax,
             x=value_counts,
             labels=value_labels,
-            autopct='%1.1f%%',
             colors=ordered_colors,
             title=f'{title_prefix}{col}',
-            title_args=title_args
+            title_kwargs=title_args
         )
 
     _hide_unused_axes(axs, len(data.columns))
@@ -950,10 +992,10 @@ def plot_value_counts(
             ax=ax,
             labels=value_labels,
             width=value_counts,
-            color=ordered_colors,
+            colors=ordered_colors,
             title=f'{title_prefix}{col}',
             xlabel=xlabel,
-            title_args=title_args
+            title_kwargs=title_args
         )
 
     _hide_unused_axes(axs, len(data.columns))
@@ -992,7 +1034,7 @@ def plot_hist(
             x=series,
             color=color,
             title=f'{title_prefix}{col}',
-            title_args=title_args
+            title_kwargs=title_args
         )
 
     _hide_unused_axes(axs, len(data.columns))
@@ -1041,14 +1083,14 @@ def plot_alternating_hist(
                 x=series1,
                 color=color,
                 title=f'{title_prefix}{col1} - {data1_label}',
-                title_args=title_args
+                title_kwargs=title_args
             )
             _draw_hist(
                 ax=axs_flattened[ax_idx + 1],
                 x=series2,
                 color=color,
                 title=f'{title_prefix}{col2} - {data2_label}',
-                title_args=title_args
+                title_kwargs=title_args
             )
 
     _hide_unused_axes(axs, ax_count)
@@ -1173,10 +1215,9 @@ def plot_group_variable_sum_into_pie(
             ax=ax,
             x=value_sums,
             labels=value_labels,
-            autopct='%1.1f%%',
             colors=ordered_colors,
             title=f'{title_prefix}{col}',
-            title_args=title_args
+            title_kwargs=title_args
         )
 
     _hide_unused_axes(axs, len(group_cols))
@@ -1300,10 +1341,10 @@ def plot_group_variable_sum_into_barh(
             ax=ax,
             labels=value_labels,
             width=value_sums,
-            color=ordered_colors,
+            colors=ordered_colors,
             title=f'{title_prefix}{col}',
             xlabel=xlabel,
-            title_args=title_args
+            title_kwargs=title_args
         )
 
     _hide_unused_axes(axs, len(group_cols))
@@ -1423,10 +1464,10 @@ def plot_alternating_value_counts_barh(
                 ax=axs_flattened[ax_idx],
                 labels=value_labels1,
                 width=value_counts1,
-                color=ordered_colors,
+                colors=ordered_colors,
                 title=f'{title_prefix}{col1} - {data1_label}',
                 xlabel=xlabel,
-                title_args=title_args
+                title_kwargs=title_args
             )
 
             value_labels2, value_counts2 = _get_value_counts_and_sort_labels(
@@ -1444,10 +1485,10 @@ def plot_alternating_value_counts_barh(
                 ax=axs_flattened[ax_idx + 1],
                 labels=value_labels2,
                 width=value_counts2,
-                color=ordered_colors,
+                colors=ordered_colors,
                 title=f'{title_prefix}{col2} - {data2_label}',
                 xlabel=xlabel,
-                title_args=title_args
+                title_kwargs=title_args
             )
 
 
@@ -1492,22 +1533,22 @@ def plot_comparing_box(
 
     for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(ax_count)):
         if col1 in data2.columns:
-            _draw_boxplots(
+            _draw_boxplot(
                 ax=axs_flattened[ax_idx],
                 x=series1,
                 label=data1_label,
                 position=0,
                 title=f'{title_prefix}{col1}',
-                title_args=title_args
+                title_kwargs=title_args
             )
 
-            _draw_boxplots(
+            _draw_boxplot(
                 ax=axs_flattened[ax_idx],
                 x=series2,
                 label=data2_label,
                 position=1,
                 title=f'{title_prefix}{col2}',
-                title_args=title_args
+                title_kwargs=title_args
             )
 
     _hide_unused_axes(axs, ax_count)
