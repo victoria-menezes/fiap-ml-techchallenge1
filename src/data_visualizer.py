@@ -9,6 +9,22 @@ import numpy as np
 
 ### Private methods
 
+TITLE_AX_DEFAULTS : dict = {
+    'fontsize' : 10,
+    'fontweight' : 'bold',
+    'fontstyle' : 'normal',
+    'fontfamily' : 'sans-serif',
+    'color' : '#000000'
+}
+
+TITLE_FIG_DEFAULTS : dict = {
+    'fontsize' : 14,
+    'fontweight' : 'bold',
+    'fontstyle' : 'normal',
+    'fontfamily' : 'sans-serif',
+    'color' : '#000000'
+}
+
 # Validators
 
 def _validate_ncols(ncols : int) -> None:
@@ -547,7 +563,7 @@ def _draw_pie(
         autopct : str,
         colors : list,
         title : str,
-        title_args : dict = {}
+        title_args : dict | None = None
 ) -> None:
     """Draws a pie chart with a title on ax.
 
@@ -572,10 +588,9 @@ def _draw_pie(
         autopct=autopct,
         colors=colors
     )
-    if title_args:
-        _title_format(ax, title, **title_args)
-    else:
-        _title_format(ax, title)
+
+    _title_format(ax, title, **{**TITLE_AX_DEFAULTS, **(title_args or {})})
+
 
 def _draw_barh(
         ax : Axes,
@@ -584,7 +599,7 @@ def _draw_barh(
         color : list,
         title : str,
         xlabel : str,
-        title_args : dict = {}
+        title_args : dict | None = None
 ) -> None:
     """Draws a horizontal bar chart on ax, with the first label on top.
 
@@ -619,7 +634,7 @@ def _draw_barh(
     )
     ax.invert_yaxis()
 
-    _title_format(ax, title, **title_args)
+    _title_format(ax, title, **{**TITLE_AX_DEFAULTS, **(title_args or {})})
 
     ax.set_xlabel(xlabel)
 
@@ -628,7 +643,7 @@ def _draw_hist(
         x : pd.Series | pd.DataFrame,
         color : str,
         title : str,
-        title_args : dict = {}
+        title_args : dict | None = None
 ) -> None:
     """TBA
     """
@@ -638,7 +653,7 @@ def _draw_hist(
         x=x,
         color=color
     )
-    _title_format(ax, title, **title_args)
+    _title_format(ax, title, **{**TITLE_AX_DEFAULTS, **(title_args or {})})
 
 def _draw_boxplots(
         ax : Axes,
@@ -646,7 +661,7 @@ def _draw_boxplots(
         label : str,
         position : float,
         title : str,
-        title_args : dict = {}
+        title_args : dict | None = None
 ) -> None:
     """TBA"""
     _visual_setup(ax)
@@ -657,7 +672,7 @@ def _draw_boxplots(
         positions=[position]
     )
 
-    _title_format(ax, title, **title_args)
+    _title_format(ax, title, **{**TITLE_AX_DEFAULTS, **(title_args or {})})
 
 
 ### Public methods
@@ -677,8 +692,8 @@ def plot_value_counts_pie(
         other_label : str = 'Outros',
         dropna : bool = False,
         na_label : str = 'Sem dado',
-        title_args : dict = {},
-        suptitle_args : dict = {}
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
 ) -> tuple[Figure, np.ndarray]:
     """Plots each column's value counts as a pie chart, one subplot per column.
 
@@ -767,7 +782,7 @@ def plot_value_counts_pie(
 
     _hide_unused_axes(axs, len(data.columns))
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
     return fig, axs
 
 def plot_value_counts(
@@ -784,8 +799,8 @@ def plot_value_counts(
         other_label : str = 'Outros',
         dropna : bool = False,
         na_label : str = 'Sem dado',
-        title_args : dict = {},
-        suptitle_args : dict = {}
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """Plots each column's value counts as a horizontal bar chart, one subplot per column.
 
@@ -876,7 +891,7 @@ def plot_value_counts(
 
     _hide_unused_axes(axs, len(data.columns))
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
     return fig, axs
 
 ### HISTOGRAM
@@ -888,8 +903,8 @@ def plot_hist(
         ncols : int = 3,
         title_prefix : str = 'Distribuição de clientes por ',
         color : str = 'blue',
-        title_args : dict = {},
-        suptitle_args : dict = {}
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """TBA
     """
@@ -915,7 +930,7 @@ def plot_hist(
 
     _hide_unused_axes(axs, len(data.columns))
     
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
     return fig, axs
 
 def plot_alternating_hist(
@@ -928,8 +943,8 @@ def plot_alternating_hist(
         ncols : int = 3,
         title_prefix : str = 'Distribuição por ',
         color : str = 'blue',
-        title_args : dict = {},
-        suptitle_args : dict = {}
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """TBA
     """
@@ -971,7 +986,7 @@ def plot_alternating_hist(
 
     _hide_unused_axes(axs, ax_count)
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
     return fig, axs
 
 ### GROUPED SUMS
@@ -989,8 +1004,8 @@ def plot_group_variable_sum_into_pie(
         other_label : str = 'Outros',
         dropna : bool = False,
         na_label : str = 'Sem dado',
-        title_args : dict = {},
-        suptitle_args : dict = {}
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """Plots, for each column of data, a pie chart of target_col's sum per category.
 
@@ -1099,7 +1114,7 @@ def plot_group_variable_sum_into_pie(
 
     _hide_unused_axes(axs, len(group_cols))
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
     return fig, axs
 
 def plot_group_variable_sum_into_barh(
@@ -1117,8 +1132,8 @@ def plot_group_variable_sum_into_barh(
         other_label : str = 'Outros',
         dropna : bool = False,
         na_label : str = 'Sem dado',
-        title_args : dict = {},
-        suptitle_args : dict = {}
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """Plots, for each column of data, a horizontal bar chart of target_col's sum per category.
 
@@ -1226,7 +1241,7 @@ def plot_group_variable_sum_into_barh(
 
     _hide_unused_axes(axs, len(group_cols))
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
     return fig, axs
 
 def plot_alternating_value_counts_barh(
@@ -1246,8 +1261,8 @@ def plot_alternating_value_counts_barh(
         other_label : str = 'Outros',
         dropna : bool = False,
         na_label : str = 'Sem dado',
-        title_args : dict = {},
-        suptitle_args : dict = {}
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """Plots, for each column of data1 and data2 in alternation,
     a horizontal bar chart of value counts. Good for comparisons.
@@ -1372,7 +1387,7 @@ def plot_alternating_value_counts_barh(
 
     _hide_unused_axes(axs, ax_count)
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
     return fig, axs
 
 def plot_comparing_box(
@@ -1385,8 +1400,8 @@ def plot_comparing_box(
         ncols : int = 2,
         title_prefix : str = 'Clientes por ',
         max_categories : int = 10,
-        title_args : dict = {},
-        suptitle_args : dict = {}
+        title_args : dict | None = None,
+        suptitle_args : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """TBA
     """
@@ -1430,5 +1445,5 @@ def plot_comparing_box(
 
     _hide_unused_axes(axs, ax_count)
 
-    _suptitle_format(fig, fig_title, **suptitle_args)
+    _suptitle_format(fig, fig_title, **{**TITLE_FIG_DEFAULTS, **(suptitle_args or {})})
     return fig, axs
