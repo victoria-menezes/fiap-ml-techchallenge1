@@ -25,7 +25,9 @@ from sklearn.model_selection import (StratifiedKFold,
                                      GridSearchCV)
 from sklearn.pipeline import Pipeline
 
-from data_visualizer import plot_line_chart, create_fig, fig_suptitle_format
+from data_visualizer import (
+    plot_line_chart, create_fig, fig_suptitle_format,
+    make_color_zone, draw_line)
 
 default_line_color : str = '#004f8f'
 
@@ -180,6 +182,7 @@ def plot_pr(
         y_proba,
         ax,
         label:str,
+        color_zone_kwargs:dict | None = None,
         plot_line_kwargs:dict | None = None
     ):
     y_true, y_proba = _validate_binary(y_true, y_proba)
@@ -202,6 +205,15 @@ def plot_pr(
         **kwargs
     )
 
+    color_zone_kwargs_all : dict = {
+        'ax':ax,
+        **(color_zone_kwargs or {})
+    }
+
+    make_color_zone(
+        **color_zone_kwargs_all
+    )
+    
     ax.set_xlim([0.0, 1.0])
     ax.set_ylim([0.0, 1.05])
 
@@ -209,6 +221,8 @@ def plot_roc_pr(
         y_true,
         y_proba,
         label:str,
+        target_recall : float | None = None,
+        min_precision : float = 0.5,
         plot_line_kwargs: dict | None = None,
         suptitle_args: dict | None = None
 ):
@@ -219,21 +233,48 @@ def plot_roc_pr(
     )
 
     axs_flattened = axs.flatten()
+    ax_roc = axs_flattened[0]
+    ax_pr = axs_flattened[1]
 
     plot_roc(
         y_true,
         y_proba,
-        ax=axs_flattened[0],
+        ax=ax_roc,
         label=label,
         plot_line_kwargs=plot_line_kwargs
     )
 
+    # ROC: random-guess baseline is 0.5
+    prevalence = y_true.mean()
+    ax_roc.plot([0, 1], [0, 1], "-", lw=0.5, color='red', label="Random (AUC-ROC = 0.5)")
+
+
+    color_zone_kwargs_all : dict = {}
+    if target_recall:
+        color_zone_kwargs_all = {
+            'ax':ax_pr,
+            'x':[target_recall, 1],
+            'y1':min_precision,
+            'y2':1,
+            'color':'#14c50e',
+            'fill_between_kwargs':{'alpha': 0.2}
+        }
     plot_pr(
         y_true,
         y_proba,
-        ax=axs_flattened[1],
+        ax=ax_pr,
         label=label,
-        plot_line_kwargs=plot_line_kwargs
+        plot_line_kwargs=plot_line_kwargs,
+        color_zone_kwargs=color_zone_kwargs_all
+    )
+
+    # PR: random-guess baseline is the churn rate
+    prevalence = y_true.mean()
+    draw_line(
+        ax=ax_pr,
+        coord=prevalence,
+        color='red',
+        label=f'Random (AUC-PR = {prevalence:.2f}'
     )
 
     fig_suptitle_format(
@@ -241,62 +282,3 @@ def plot_roc_pr(
         title='ROC and PR curves',
         **(suptitle_args or {})
     )
-
-def plot_roc_pr_old(
-    y_true,
-    probas: dict,
-    target_recall: float | None = None,
-    min_precision: float | None = None,
-    figsize=(12, 5),
-):
-    """Plot ROC and Precision-Recall curves side by side for one or more models.
-
-    probas: {model_name: array of P(churn=1)}
-    target_recall / min_precision: draw your business goal on the PR plot.
-    """
-    y_true = np.asarray(y_true)
-    prevalence = y_true.mean()
-    fig, (ax_roc, ax_pr) = plt.subplots(1, 2, figsize=figsize)
-
-    for name, p in probas.items():
-        fpr, tpr, _ = roc_curve(y_true, p)
-        ax_roc.plot(fpr, tpr, lw=2, label=f"{name} (AUC-ROC = {roc_auc_score(y_true, p):.3f})")
-
-        prec, rec, _ = precision_recall_curve(y_true, p)
-        ax_pr.plot(rec, prec, lw=2, label=f"{name} (AUC-PR = {average_precision_score(y_true, p):.3f})")
-
-    # ROC: random-guess diagonal
-    ax_roc.plot([0, 1], [0, 1], "k--", lw=1, label="Random (AUC-ROC = 0.5)")
-    ax_roc.set(
-        xlabel="False Positive Rate (FPR)",
-        ylabel="True Positive Rate (TPR = recall)",
-        title="ROC curve",
-        xlim=(0, 1),
-        ylim=(0, 1.02),
-    )
-    ax_roc.legend(loc="lower right")
-    ax_roc.grid(alpha=0.3)
-
-    # PR: random-guess baseline is the churn rate
-    ax_pr.axhline(prevalence, color="k", ls="--", lw=1, label=f"Random (AUC-PR = {prevalence:.2f})")
-    if target_recall is not None:
-        ax_pr.axvline(target_recall, color="gray", ls=":", lw=1.5)
-    if min_precision is not None:
-        ax_pr.axhline(min_precision, color="gray", ls=":", lw=1.5)
-    if target_recall is not None and min_precision is not None:
-        # The goal is the top-right region beyond both dotted lines.
-        ax_pr.fill_between(
-            [target_recall, 1], min_precision, 1, color="green", alpha=0.12, label="Goal region"
-        )
-    ax_pr.set(
-        xlabel="Recall",
-        ylabel="Precision",
-        title="Precision-Recall curve",
-        xlim=(0, 1),
-        ylim=(0, 1.02),
-    )
-    ax_pr.legend(loc="upper right")
-    ax_pr.grid(alpha=0.3)
-
-    fig.tight_layout()
-    return fig, (ax_roc, ax_pr)

@@ -693,7 +693,7 @@ def _draw_boxplot(
 
     _title_format(ax, title, **(title_kwargs or {}))
 
-def _draw_line(
+def _draw_lineplot(
         ax : Axes,
         x : pd.Series | np.ndarray,
         y : pd.Series | np.ndarray,
@@ -736,7 +736,67 @@ def _draw_line(
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
+def draw_line(
+    ax : Axes,
+    coord : float,
+    linetype : str = 'h',
+    color = '#3232',
+    ls : str = '-',
+    lw : float = 0.5,
+    label : str | None = None,
+    show_label : bool = False,
+    axline_kwargs : dict | None = None,
+    legend_kwargs : dict | None = None
+    ):
+
+    axline_kwargs_all : dict = {
+        'color':color,
+        'ls':ls,
+        'lw':lw,
+        'label':(label or ''),
+        **(axline_kwargs or {})
+    }
+
+    match linetype:
+        case 'h':
+            ax.axhline(
+                coord,
+                **axline_kwargs_all
+            )
+        case 'v':
+            ax.axvline(
+                coord,
+                **axline_kwargs_all
+            )
+
+    if show_label:
+        if label is not None:
+            legend_kwargs_all : dict = {
+                'loc':'lower right',
+                **(legend_kwargs or {})
+                }
+            ax.legend(**legend_kwargs_all)
+
 ### Public methods
+
+def make_color_zone(
+        ax : Axes,
+        x,
+        y1,
+        y2,
+        color : str | None = None,
+        fill_between_kwargs : dict | None = None
+    ):
+    fill_between_kwargs_all : dict = {
+        'x':x,
+        'y1':y1,
+        'y2':y2,
+        'color':color,
+        **(fill_between_kwargs or {})
+    }
+    ax.fill_between(
+        **(fill_between_kwargs_all or {})
+    )
 
 def plot_line_chart(
         x : pd.Series | np.ndarray,
@@ -757,7 +817,7 @@ def plot_line_chart(
         title = f'{xlabel} por {ylabel}'
     
     if ax:
-        _draw_line(
+        _draw_lineplot(
             ax=ax,
             x=x,
             y=y,
@@ -779,7 +839,7 @@ def plot_line_chart(
 
         ax = axs.flatten()[0]
         
-        _draw_line(
+        _draw_lineplot(
             ax=ax,
             x=x,
             y=y,
