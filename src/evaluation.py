@@ -477,7 +477,7 @@ def plot_pr(
     ap = average_precision_score(y_true, y_proba)
 
     kwargs : dict = {
-        'title':f'Precision-Recall (Average Precision = {ap:.4f})',
+        'title':f'Precision-Recall',
         'xlabel':'Recall',
         'ylabel':'Precision',
         'color':default_line_color,
