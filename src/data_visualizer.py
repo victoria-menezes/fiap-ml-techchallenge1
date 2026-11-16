@@ -711,6 +711,8 @@ def _draw_lineplot(
     line_kwargs_all : dict = {
         'color':color,
         'label':label,
+        'lw': 0.75,
+        'alpha':1,
         **(line_kwargs or {})
         }
     
@@ -817,6 +819,7 @@ def plot_line_chart(
         fig_title : str = '',
         figsize : tuple = (16, 6),
         title : str = '',
+        line_kwargs : dict | None = None,
         title_kwargs : dict | None = None,
         suptitle_kwargs : dict | None = None
     ):
@@ -834,6 +837,7 @@ def plot_line_chart(
             label=label,
             title=title,
             color=color,
+            line_kwargs=line_kwargs,
             title_kwargs=title_kwargs
         )
 

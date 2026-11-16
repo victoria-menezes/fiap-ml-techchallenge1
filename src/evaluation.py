@@ -56,6 +56,7 @@ from data_visualizer import (
 
 _line_color_cycle : list[str] = ['#004f8f']
 default_line_color : str = _line_color_cycle[0]
+default_detail_color : str = '#63b4ff'
 
 ### Validation helpers
 
@@ -418,7 +419,6 @@ def set_color_cycle(colors : list[str]):
     default_line_color = _line_color_cycle[0]
 
 def _color_cycle() -> cycle:
-    print(_line_color_cycle)
     return cycle(_line_color_cycle)
 
 def plot_roc(
@@ -558,7 +558,7 @@ def plot_roc_pr(
 
     # ROC: random-guess baseline is 0.5
     prevalence = y_true.mean()
-    ax_roc.plot([0, 1], [0, 1], "-", lw=0.5, color='red', label="Random (AUC-ROC = 0.5)")
+    ax_roc.plot([0, 1], [0, 1], "-", lw=0.5, color=default_detail_color, label="Random (AUC-ROC = 0.5)")
 
 
     color_zone_kwargs_all : dict = {}
@@ -569,7 +569,7 @@ def plot_roc_pr(
             'y1':min_precision,
             'y2':1,
             'color':'#14c50e',
-            'fill_between_kwargs':{'alpha': 0.2}
+            'fill_between_kwargs':{'alpha': 0.1}
         }
 
         threshold_result = get_threshold_for_recall(
@@ -583,9 +583,9 @@ def plot_roc_pr(
                 ax_pr,
                 x=threshold_result['recall'],
                 y=threshold_result['precision'],
-                color='red',
+                color=default_detail_color,
                 zorder=5,
-                label=f'threshold = {threshold_result['threshold']:.2f}',
+                label=f'{label} threshold = {threshold_result['threshold']:.2f}',
                 alpha=0.75,
                 marker='x'
             )
@@ -605,7 +605,7 @@ def plot_roc_pr(
     draw_line(
         ax=ax_pr,
         coord=prevalence,
-        color='red',
+        color=default_detail_color,
         label=f'Random (AUC-PR = {prevalence:.2f})'
     )
 
