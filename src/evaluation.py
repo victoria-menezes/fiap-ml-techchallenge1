@@ -412,12 +412,14 @@ def get_threshold_for_recall(
 ### Plotters
 
 def set_color_cycle(colors : list[str]):
-    _line_color_cycle[:] = colors
+    global _line_color_cycle
+    _line_color_cycle = colors
     global default_line_color
     default_line_color = _line_color_cycle[0]
 
 def _color_cycle() -> cycle:
-    return cycle(_line_color_cycle,)
+    print(_line_color_cycle)
+    return cycle(_line_color_cycle)
 
 def plot_roc(
         y_true,
