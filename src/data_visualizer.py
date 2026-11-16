@@ -736,17 +736,25 @@ def _draw_lineplot(
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
+def draw_scatter(
+        ax : Axes,
+        x,
+        y,
+        **kwargs
+    ) -> None:
+    ax.scatter(x, y, **kwargs)
+
 def draw_line(
-    ax : Axes,
-    coord : float,
-    linetype : str = 'h',
-    color = '#3232',
-    ls : str = '-',
-    lw : float = 0.5,
-    label : str | None = None,
-    show_label : bool = False,
-    axline_kwargs : dict | None = None,
-    legend_kwargs : dict | None = None
+        ax : Axes,
+        coord : float,
+        linetype : str = 'h',
+        color = '#3232',
+        ls : str = '-',
+        lw : float = 0.5,
+        label : str | None = None,
+        show_label : bool = False,
+        axline_kwargs : dict | None = None,
+        legend_kwargs : dict | None = None
     ):
 
     axline_kwargs_all : dict = {

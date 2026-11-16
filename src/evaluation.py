@@ -29,12 +29,18 @@ from sklearn.metrics import (
     average_precision_score,
     precision_recall_curve,
     roc_auc_score,
-    roc_curve
+    roc_curve,
+    classification_report,
+    accuracy_score,
+    recall_score,
+    precision_score,
+    f1_score
+    
 )
 from sklearn.model_selection import (
     StratifiedKFold,
     cross_val_predict,
-    GridSearchCV
+    GridSearchCV,
 )
 from sklearn.pipeline import Pipeline
 
@@ -43,7 +49,8 @@ from data_visualizer import (
     create_fig,
     fig_suptitle_format,
     make_color_zone,
-    draw_line
+    draw_line,
+    draw_scatter
 )
 
 
@@ -262,6 +269,28 @@ def grid_search_models(
         }
     return results
 
+def proba_to_pred(
+        y_proba,
+        threshold : float = 0.5
+    ):
+    return np.asarray(y_proba>=threshold).astype(int)
+
+def quick_evaluation(
+        y_true,
+        y_proba,
+        threshold : float = 0.5
+) -> None:
+    y_pred = proba_to_pred(y_proba, threshold)
+
+    print('='*50)
+    print(f'EVALUATION')
+    print(classification_report(y_true, y_pred))
+    print(f'acc\t\t\t{accuracy_score(y_true, y_pred):.2f}')
+    print(f'recall\t\t\t{recall_score(y_true, y_pred):.2f}')
+    print(f'precision\t\t{precision_score(y_true, y_pred):.2f}')
+    print(f'f1-score\t\t{f1_score(y_true, y_pred):.2f}')
+    print(f'average precision\t{average_precision_score(y_true, y_proba):.2f}')
+
 def display_grid_results(
         grid_search_models_result : dict
     ) -> None:
@@ -338,7 +367,7 @@ def get_threshold_for_recall(
         y_true,
         y_proba,
         target_recall : float    
-    ) -> dict | None:
+    ) -> dict:
     """Highest threshold that still reaches `target_recall`, with the precision you get there.
  
     Parameters
@@ -353,7 +382,7 @@ def get_threshold_for_recall(
     Returns
     ---
         dict | None
-            {'threshold', 'recall', 'precision'} (all floats), or None if no
+            {'threshold', 'recall', 'precision'} (all floats), or {} if no
             threshold reaches target_recall
  
     Raises
@@ -540,6 +569,26 @@ def plot_roc_pr(
             'color':'#14c50e',
             'fill_between_kwargs':{'alpha': 0.2}
         }
+
+        threshold_result = get_threshold_for_recall(
+            y_true,
+            y_proba,
+            target_recall
+        )
+
+        if threshold_result:
+            draw_scatter(
+                ax_pr,
+                x=threshold_result['recall'],
+                y=threshold_result['precision'],
+                color='red',
+                zorder=5,
+                label=f'threshold = {threshold_result['threshold']:.2f}',
+                alpha=0.75,
+                marker='x'
+            )
+
+
     plot_pr(
         y_true,
         y_proba,
@@ -555,7 +604,7 @@ def plot_roc_pr(
         ax=ax_pr,
         coord=prevalence,
         color='red',
-        label=f'Random (AUC-PR = {prevalence:.2f}'
+        label=f'Random (AUC-PR = {prevalence:.2f})'
     )
 
 def plot_multiple_roc_pr(
@@ -615,43 +664,20 @@ def plot_multiple_roc_pr(
     fig, axs = create_fig(nplots=2, ncols=2, figsize=figsize)
     ax_roc, ax_pr = axs.ravel()
  
-    # baselines and target zone first, so they are part of the final legends.
-    prevalence = float(y_true.mean())
-    ax_roc.plot([0, 1], [0, 1], lw=0.5, color='red', label='Random (AUC = 0.5)')
-    draw_line(ax_pr, coord=prevalence, color='red', label=f'Random (AP = {prevalence:.2f})')
- 
     colors = _color_cycle()
     for name, results in results.items():
         y_proba = results['y_proba']
         kwargs = {'color': next(colors), **(plot_line_kwargs or {})}
-        plot_roc(
+        plot_roc_pr(
+            ax_roc=ax_roc,
+            ax_pr=ax_pr,
             y_true=y_true,
             y_proba=y_proba,
-            ax=ax_roc,
+            target_recall=target_recall,
             label=name,
             plot_line_kwargs=kwargs
         )
-        color_zone_kwargs : dict = {}
-        if target_recall is not None:
-            color_zone_kwargs={
-                'x':[target_recall or 1, 1],
-                'y1':min_precision,
-                'y2':1,
-                'color':'#14c50e',
-                'fill_between_kwargs':{
-                    'alpha': 0.2,
-                    'label': f'Target (recall \u2265 {target_recall:.2f}, precision \u2265 {min_precision:.2f})',
-                    }
-                }
-        plot_pr(
-            y_true=y_true,
-            y_proba=y_proba,
-            ax=ax_pr,
-            label=name,
-            color_zone_kwargs=color_zone_kwargs,
-            plot_line_kwargs=kwargs
-        )
- 
+     
     # plot_line_chart rebuilds the legend on every call; rebuild once at the end
     # so the baselines and the target zone are included.
     for ax in (ax_roc, ax_pr):
