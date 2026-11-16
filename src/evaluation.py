@@ -674,6 +674,7 @@ def plot_multiple_roc_pr(
             y_true=y_true,
             y_proba=y_proba,
             target_recall=target_recall,
+            min_precision=min_precision,
             label=name,
             plot_line_kwargs=kwargs
         )
