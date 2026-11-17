@@ -280,7 +280,7 @@ def random_grid_search_models(
         y_train,
         X_test=None
     ) -> dict:
-    """Runs grid_search_model for every model.
+    """Runs random_grid_search_model for every model.
  
     Parameters
     ---
@@ -300,7 +300,7 @@ def random_grid_search_models(
     Returns
     ---
         dict
-            name -> {'grid_search': GridSearchCV, 'y_proba': np.ndarray | None}
+            name -> {'grid_search': RandomizedSearchCV, 'y_proba': np.ndarray | None}
  
     Raises
     ---
@@ -401,13 +401,32 @@ def grid_search_models(
 
 def add_stats_to_grid_results(
         grid_results : dict,
-        y_true,
-        target_recall : float
+        X_train,
+        y_train,
+        y_test,
+        target_recall : float,
+        seed : int
     ):
-        for model_name in grid_results:
-            y_proba = grid_results[model_name]['y_proba']
-            threshold = get_threshold_for_recall(y_true, y_proba, target_recall)
-            grid_results[model_name]['stats'] = threshold
+    for model_name in grid_results:
+        results = grid_results[model_name]
+        grid = results['grid_search']
+        winning_model = grid.best_estimator_
+
+        # gets threshold from TRAIN set (no leakage)
+        y_oof_proba = get_oof_proba(winning_model, X_train, y_train, seed)
+        stats = get_threshold_for_recall(y_train, y_oof_proba, target_recall)
+
+        # CV score of best candidate
+        best_idx = grid.best_index_
+        stats['cv_ap_mean'] = grid.cv_results_['mean_test_score'][best_idx]
+        stats['cv_ap_std'] = grid.cv_results_['std_test_score'][best_idx]
+
+        # get metrics from threshold from TRAIN set
+        y_pred = proba_to_pred(results['y_proba'], stats['threshold'])
+        stats['recall_on_test'] = recall_score(y_test, y_pred)
+        stats['precision_on_test'] = precision_score(y_test, y_pred)
+        
+        grid_results[model_name]['stats'] = stats
 
 def proba_to_pred(
         y_proba,
@@ -445,7 +464,6 @@ def display_grid_results(
         grid_search_models_result : dict
             Output of grid_search_models
     """
-    # for model in grid_search_models_result:
     for name, result in grid_search_models_result.items():
         grid_search = result['grid_search']
         
@@ -458,7 +476,7 @@ def display_grid_results(
         print(f"Best CV {scoring}: {grid_search.best_score_:.4f}")
         if result.get('stats'):
             stats = result.get('stats')
-            print(f'Threshold ( Recall = {stats['recall']:.2f} | Precision = {stats['precision']:.2f} ) = {stats['threshold']:.2f}')
+            print(f'Threshold ( Recall on Test = {stats['recall_on_test']:.2f} | Precision on Test = {stats['precision_on_test']:.2f} ) = {stats['threshold']:.2f}')
 
 ### Predictions and thresholds
 
@@ -728,7 +746,7 @@ def plot_roc_pr_random(
         y_true
 ):
     # ROC: random-guess baseline is 0.5
-    ax_roc.plot([0, 1], [0, 1], "-", lw=0.5, color=default_detail_color, label="Random (AUC-ROC = 0.5)")
+    ax_roc.plot([0, 1], [0, 1], "-", lw=0.5, color=default_detail_color, label="Random (AUC = 0.5)")
 
     prevalence = y_true.mean()
     
@@ -737,14 +755,14 @@ def plot_roc_pr_random(
         ax=ax_pr,
         coord=prevalence,
         color=default_detail_color,
-        label=f'Random (AUC-PR = {prevalence:.2f})'
+        label=f'Random (AUC = {prevalence:.2f})'
     )
 
 
 
 def plot_multiple_roc_pr(
         y_true,
-        results: Mapping[str, np.ndarray] | np.ndarray,
+        results: dict,
         target_recall: float | None = None,
         min_precision: float = 0.5,
         plot_line_kwargs: dict | None = None,
@@ -761,9 +779,8 @@ def plot_multiple_roc_pr(
     ---
         y_true : array-like
             True 0/1 labels
-        y_proba : Mapping[str, array-like] | array-like
-            name -> P(churn=1) for each model, e.g. from get_oof_proba.
-            A bare array is plotted as a single model called 'model'
+        results : dict
+            Output from grid_search_models or random_grid_search_models
         target_recall : float | None, default None
             Left edge of the shaded target zone. Must be in (0, 1]
         min_precision : float, default 0.5
@@ -791,8 +808,6 @@ def plot_multiple_roc_pr(
         _check_unit_interval('target_recall', target_recall, low_open=True)
         _check_unit_interval('min_precision', min_precision)
     y_true = _as_binary_labels(y_true)
-    if not isinstance(results, Mapping):
-        results = {'model': results}
     if not results:
         raise ValueError('probas is empty')
  
@@ -800,8 +815,8 @@ def plot_multiple_roc_pr(
     ax_roc, ax_pr = axs.ravel()
  
     colors = _color_cycle()
-    for name, results in results.items():
-        y_proba = results['y_proba']
+    for name, res in results.items():
+        y_proba = res['y_proba']
         kwargs = {'color': next(colors), **(plot_line_kwargs or {})}
         plot_roc_pr(
             ax_roc=ax_roc,
