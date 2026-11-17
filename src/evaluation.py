@@ -528,7 +528,7 @@ def get_threshold_for_recall(
  
     Returns
     ---
-        dict | None
+        dict
             {'threshold', 'recall', 'precision'} (all floats), or {} if no
             threshold reaches target_recall
  
@@ -547,7 +547,7 @@ def get_threshold_for_recall(
 
     meets_criteria = np.where(recall[:-1] >= target_recall)[0]
     if len(meets_criteria) == 0:
-        return None
+        return {}
     
     best_idx = meets_criteria[-1]
     return {
