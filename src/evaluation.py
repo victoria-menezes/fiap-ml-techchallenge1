@@ -41,6 +41,7 @@ from sklearn.model_selection import (
     StratifiedKFold,
     cross_val_predict,
     GridSearchCV,
+    RandomizedSearchCV
 )
 from sklearn.pipeline import Pipeline
 
@@ -203,6 +204,134 @@ def grid_search_model(
 
     return grid_search.fit(X_train, y_train)
 
+def random_grid_search_model(
+        model,
+        X_train,
+        y_train,
+        seed : int,
+        **grid_kwargs
+    ) -> RandomizedSearchCV:
+    """Fits a GridSearchCV tuned for imbalanced binary classification.
+     
+    Defaults: stratified 5-fold CV, ``scoring='average_precision'`` and
+    ``n_jobs=-1``. Any ``GridSearchCV`` argument in grid_kwargs overrides them.
+    
+    Parameters
+    ---
+        model : estimator
+            Usually a Pipeline from build_model_pipeline
+        X_train : array-like
+        y_train : array-like
+            0/1 labels
+        seed : int | None, default None
+            Random state for the default CV splitter (see _make_cv).
+            Ignored if grid_kwargs contains its own ``cv``
+        **grid_kwargs
+            Passed to GridSearchCV. Must include ``param_grid``
+    
+    Returns
+    ---
+        GridSearchCV
+            The fitted search
+    
+    Raises
+    ---
+        ValueError
+            If param_distributions is missing or y_train is not valid 0/1 labels
+    """
+    _as_binary_labels(y_train)
+    grid_kwargs_correct : dict = {}
+    if 'param_distributions' not in grid_kwargs:
+        if 'param_grid' not in grid_kwargs:
+            raise ValueError('grid_kwargs must include "param_distributions"')
+        else:
+            grid_kwargs_correct['param_distributions'] = grid_kwargs.pop('param_grid')
+            grid_kwargs_correct = {**grid_kwargs_correct, **grid_kwargs}
+    else:
+        grid_kwargs_correct = grid_kwargs
+
+    args : dict = {
+        'cv':_make_cv(seed),
+        'scoring':'average_precision',
+        'n_jobs':-1,
+        'random_state':seed,
+        **(grid_kwargs_correct or {})
+    }
+    grid_search = RandomizedSearchCV(estimator=model, **args)
+
+    return grid_search.fit(X_train, y_train)
+
+def _validate_model_params_dicts(models_dict : dict, params_dict : dict):
+    overflow_params = set(params_dict) - set(models_dict)
+    overflow_models = set(models_dict) - set(params_dict)
+    if overflow_params or overflow_models:
+        raise ValueError(
+            f'models and models_grid_params differ. '
+            f'Grid params without model: {sorted(overflow_params)}; '
+            f'models without grid params: {sorted(overflow_models)}'
+        )
+    
+
+def random_grid_search_models(
+        models : dict,
+        models_grid_params : dict,
+        seed : int,
+        X_train,
+        y_train,
+        X_test=None
+    ) -> dict:
+    """Runs grid_search_model for every model.
+ 
+    Parameters
+    ---
+        models : dict
+            name -> estimator
+        models_grid_params : dict
+            name -> dict of GridSearchCV kwargs (must include ``param_grid``).
+            Must have an entry for every model and no entries for unknown names
+        X_train : array-like
+        y_train : array-like
+        X_test : array-like | None, default None
+            If given, the refit best estimator scores it and P(churn=1)
+            is returned under 'y_proba'
+        seed : int | None, default None
+            Forwarded to grid_search_model
+ 
+    Returns
+    ---
+        dict
+            name -> {'grid_search': GridSearchCV, 'y_proba': np.ndarray | None}
+ 
+    Raises
+    ---
+        ValueError
+            If models and models_grid_params names do not match, or X_test is
+            given but refit was disabled so there is no best estimator
+    """
+    _validate_model_params_dicts(models, models_grid_params)
+
+    results : dict = {}
+    for name, model in models.items():
+        grid_search = random_grid_search_model(
+            model,
+            X_train,
+            y_train,
+            seed=seed,
+            **models_grid_params[name]
+        )
+
+        y_proba = None
+        if X_test is not None:
+            if not grid_search.refit:
+                raise ValueError(f'"{name}": refit is disabled, cannot score X_test')
+
+            y_proba = grid_search.predict_proba(X_test)[:, 1]
+        results[name] = {
+            'grid_search': grid_search,
+            'y_proba': y_proba
+        }
+    return results
+
 def grid_search_models(
         models : dict,
         models_grid_params : dict,
@@ -270,6 +399,16 @@ def grid_search_models(
         }
     return results
 
+def add_stats_to_grid_results(
+        grid_results : dict,
+        y_true,
+        target_recall : float
+    ):
+        for model_name in grid_results:
+            y_proba = grid_results[model_name]['y_proba']
+            threshold = get_threshold_for_recall(y_true, y_proba, target_recall)
+            grid_results[model_name]['stats'] = threshold
+
 def proba_to_pred(
         y_proba,
         threshold : float = 0.5
@@ -279,12 +418,16 @@ def proba_to_pred(
 def quick_evaluation(
         y_true,
         y_proba,
-        threshold : float = 0.5
+        threshold : float,
+        label:str=''
 ) -> None:
     y_pred = proba_to_pred(y_proba, threshold)
 
     print('='*50)
-    print(f'EVALUATION')
+    txt : str = ''
+    if label != '':
+        txt = f' OF {label.upper()}'
+    print(f'EVALUATION{txt}')
     print(classification_report(y_true, y_pred))
     print(f'acc\t\t\t{accuracy_score(y_true, y_pred):.2f}')
     print(f'recall\t\t\t{recall_score(y_true, y_pred):.2f}')
@@ -313,6 +456,9 @@ def display_grid_results(
         
         print("Best Parameters:", grid_search.best_params_)
         print(f"Best CV {scoring}: {grid_search.best_score_:.4f}")
+        if result.get('stats'):
+            stats = result.get('stats')
+            print(f'Threshold ( Recall = {stats['recall']:.2f} | Precision = {stats['precision']:.2f} ) = {stats['threshold']:.2f}')
 
 ### Predictions and thresholds
 
@@ -456,7 +602,7 @@ def plot_roc(
         'xlabel':'False Positive Rates',
         'ylabel':'True Positive Rates',
         'color':default_line_color,
-        'label':f'{label} (AUC = {roc_auc:.4f})',
+        'label':f'{label} (AUC = {roc_auc:.2f})',
         **(plot_line_kwargs or {})
     }
 
@@ -512,7 +658,7 @@ def plot_pr(
         'xlabel':'Recall',
         'ylabel':'Precision',
         'color':default_line_color,
-        'label':f'{label} (AP = {ap:.4f})',
+        'label':f'{label} (AP = {ap:.2f})',
         **(plot_line_kwargs or {})
     }
 
@@ -556,11 +702,6 @@ def plot_roc_pr(
         plot_line_kwargs=plot_line_kwargs
     )
 
-    # ROC: random-guess baseline is 0.5
-    prevalence = y_true.mean()
-    ax_roc.plot([0, 1], [0, 1], "-", lw=0.5, color=default_detail_color, label="Random (AUC-ROC = 0.5)")
-
-
     color_zone_kwargs_all : dict = {}
     if target_recall:
         color_zone_kwargs_all = {
@@ -572,25 +713,6 @@ def plot_roc_pr(
             'fill_between_kwargs':{'alpha': 0.1}
         }
 
-        threshold_result = get_threshold_for_recall(
-            y_true,
-            y_proba,
-            target_recall
-        )
-
-        if threshold_result:
-            draw_scatter(
-                ax_pr,
-                x=threshold_result['recall'],
-                y=threshold_result['precision'],
-                color=default_detail_color,
-                zorder=5,
-                label=f'{label} threshold = {threshold_result['threshold']:.2f}',
-                alpha=0.75,
-                marker='x'
-            )
-
-
     plot_pr(
         y_true,
         y_proba,
@@ -600,14 +722,25 @@ def plot_roc_pr(
         color_zone_kwargs=color_zone_kwargs_all
     )
 
-    # PR: random-guess baseline is the churn rate
+def plot_roc_pr_random(
+        ax_roc,
+        ax_pr,
+        y_true
+):
+    # ROC: random-guess baseline is 0.5
+    ax_roc.plot([0, 1], [0, 1], "-", lw=0.5, color=default_detail_color, label="Random (AUC-ROC = 0.5)")
+
     prevalence = y_true.mean()
+    
+    # PR: random-guess baseline is the churn rate
     draw_line(
         ax=ax_pr,
         coord=prevalence,
         color=default_detail_color,
         label=f'Random (AUC-PR = {prevalence:.2f})'
     )
+
+
 
 def plot_multiple_roc_pr(
         y_true,
@@ -680,6 +813,7 @@ def plot_multiple_roc_pr(
             label=name,
             plot_line_kwargs=kwargs
         )
+    plot_roc_pr_random(ax_roc, ax_pr, y_true)
      
     # plot_line_chart rebuilds the legend on every call; rebuild once at the end
     # so the baselines and the target zone are included.

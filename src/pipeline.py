@@ -58,7 +58,9 @@ _YESNO: list[str] = [
     'Online Backup',
     'Device Protection',
     'Tech Support',
-    'Paperless Billing'
+    'Paperless Billing',
+    'Partner',
+    'Dependents'
 ]
 
 _SCALE: list[str] = [
