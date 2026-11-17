@@ -427,7 +427,7 @@ def quick_evaluation(
     txt : str = ''
     if label != '':
         txt = f' OF {label.upper()}'
-    print(f'EVALUATION{txt}')
+    print(f'EVALUATION{txt} AT THRESHOLD {threshold}')
     print(classification_report(y_true, y_pred))
     print(f'acc\t\t\t{accuracy_score(y_true, y_pred):.2f}')
     print(f'recall\t\t\t{recall_score(y_true, y_pred):.2f}')
