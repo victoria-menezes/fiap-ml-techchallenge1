@@ -25,8 +25,8 @@ class TestLoadChurnData:
                 'qwerty.parquet'
             ]
     )
-    def test_load_churn_data_success(self, monkeypatch, file_name):
-        """Verifies a valid .xlsx with data returns non-empty DataFrame"""
+    def test_success(self, monkeypatch, file_name):
+        """Verifies a valid file with data returns non-empty DataFrame"""
 
         # dummy file
         filepath : Path = self.tmp_path / file_name
@@ -49,7 +49,50 @@ class TestLoadChurnData:
         assert len(result) == 4
 
 class TestExportChurnData:
-    pass
+    @pytest.fixture(autouse = True)
+    def setup(self, tmp_path):
+        """Runs before each test method"""
+        self.dummy_df : pd.DataFrame = pd.DataFrame(
+            {
+                'customer_id': [1, 3, 432, 2],
+                'category':['A', 'B', None, 'B'],
+                'churned':[1, 0, 1, 1]
+            }
+        )
+        self.tmp_path : Path = tmp_path
+
+    @pytest.mark.parametrize(
+        "file_name", [
+            'dummy.xlsx',
+            'abc def.csv',
+            'qwerty.parquet'
+        ]
+    )
+    def test_success(self, monkeypatch, file_name):
+        """Verifies a valid path outputs successfully"""
+        # dummy file
+        filepath : Path = self.tmp_path / file_name
+        ext : str = filepath.suffix
+
+        # mock path_from_root
+        monkeypatch.setattr(utils, "path_from_root", lambda p:filepath)
+        data_loader.export_churn_data(
+            df = self.dummy_df,
+            filepath = filepath
+        )
+
+        exported : pd.DataFrame
+
+        match ext:
+            case '.csv':
+                exported = pd.read_csv(filepath)
+            case '.xlsx':
+                exported = pd.read_excel(filepath)
+            case '.parquet':
+                exported = pd.read_parquet(filepath)
+        assert isinstance(exported, pd.DataFrame)
+        assert not exported.empty
+        assert len(exported) == 4
 
 class TestFormatColumnNames:
     @pytest.mark.parametrize(
