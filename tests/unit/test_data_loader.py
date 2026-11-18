@@ -2,7 +2,11 @@ import pytest
 from pathlib import Path
 import pandas as pd
 
-import data_loader
+from data_loader import (
+    load_churn_data,
+    export_churn_data,
+    format_column_names
+    )
 import utils
 
 class TestLoadChurnData:
@@ -43,7 +47,7 @@ class TestLoadChurnData:
         monkeypatch.setattr(utils, "path_from_root", lambda p:filepath)
 
         # call and assert
-        result = data_loader.load_churn_data(filepath)
+        result = load_churn_data(filepath)
         assert isinstance(result, pd.DataFrame)
         assert not result.empty
         assert len(result) == 4
@@ -76,7 +80,7 @@ class TestExportChurnData:
 
         # mock path_from_root
         monkeypatch.setattr(utils, "path_from_root", lambda p:filepath)
-        data_loader.export_churn_data(
+        export_churn_data(
             df = self.dummy_df,
             filepath = filepath
         )
@@ -102,5 +106,5 @@ class TestFormatColumnNames:
     )
     def test_format_column_names_success(self, input_cols, expected):
         """Verifies the function outputs expected results"""
-        assert data_loader.format_column_names(input_cols) == expected
+        assert format_column_names(input_cols) == expected
 
