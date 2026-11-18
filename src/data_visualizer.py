@@ -1,4 +1,6 @@
-from collections.abc import Hashable
+import inspect
+from collections.abc import Callable, Hashable, Iterable
+from typing import Any
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -22,6 +24,13 @@ defaults_fig_title : dict = {
     'fontfamily' : 'sans-serif',
     'color' : '#000000'
 }
+
+# matplotlib 3.9 renamed Axes.boxplot's 'labels' argument to 'tick_labels'
+_BOXPLOT_LABEL_KEY : str = (
+    'tick_labels'
+    if 'tick_labels' in inspect.signature(Axes.boxplot).parameters
+    else 'labels'
+)
 
 ### Private methods
 
@@ -231,6 +240,7 @@ def _group_overflow_and_sort(
         tuple[tuple, tuple]
             (labels, values), aligned by position.
             Two empty tuples if values is empty
+
     Raises
     ---
         ValueError
@@ -312,6 +322,7 @@ def create_fig(
             Number of subplot columns.
             Must be at least 1
         figsize : tuple
+            Figure size in inches, as (width, height)
         layout : str, default 'constrained'
             Matplotlib layout engine name
 
@@ -353,6 +364,100 @@ def _hide_unused_axes(
         ax.set_visible(False)
 
 # Data
+
+def _plot_grid(
+        items : Iterable,
+        draw : Callable[[Axes, Any], None],
+        ncols : int,
+        figsize : tuple,
+        fig_title : str = '',
+        suptitle_kwargs : dict | None = None
+    ) -> tuple[Figure, np.ndarray]:
+    """Creates a grid with one subplot per item and draws each item on its own Axes.
+
+    Shared skeleton of the plotting functions: it creates the figure, calls
+    draw once per item (in order, filling the grid row by row), hides the
+    leftover subplots and sets the figure title. Callers validate their
+    arguments before calling it, so no figure is created for invalid input.
+
+    Parameters
+    ---
+        items : Iterable
+            One entry per subplot. Consumed once, and must not be empty
+        draw : Callable[[Axes, Any], None]
+            Called as draw(ax, item) to draw one item on its subplot.
+            It usually is a closure over the caller's arguments
+        ncols : int
+            Number of subplot columns.
+            Must be at least 1
+        figsize : tuple
+            Figure size in inches, as (width, height)
+        fig_title : str, default ''
+            Title for the whole figure
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols)
+
+    Raises
+    ---
+        ValueError
+            If ncols is less than 1
+    """
+    items = list(items)
+
+    fig, axs = create_fig(
+        nplots=len(items),
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    for ax, item in zip(axs.flatten(), items):
+        draw(ax, item)
+
+    _hide_unused_axes(axs, len(items))
+
+    fig_suptitle_format(fig, fig_title, suptitle_kwargs)
+    return fig, axs
+
+def _get_common_columns(
+        data1 : pd.DataFrame,
+        data2 : pd.DataFrame
+    ) -> list:
+    """Returns the column names present in both DataFrames, in data1's order.
+
+    Used by the functions that compare two samples, so that each column of
+    data1 is always matched with the column of data2 with the same name.
+
+    Parameters
+    ---
+        data1 : pd.DataFrame
+            Must have unique column names
+        data2 : pd.DataFrame
+            Must have unique column names
+
+    Returns
+    ---
+        list
+            Shared column names, ordered as in data1. Never empty
+
+    Raises
+    ---
+        ValueError
+            If either DataFrame has duplicate column names, or if they
+            have no column in common
+    """
+    if data1.columns.has_duplicates or data2.columns.has_duplicates:
+        raise ValueError('data1 and data2 must not have duplicate column names')
+
+    common_cols : list = [col for col in data1.columns if col in data2.columns]
+    if not common_cols:
+        raise ValueError('data1 and data2 have no columns in common')
+    return common_cols
 
 def _get_value_counts_and_sort_labels(
         series : pd.Series,
@@ -488,30 +593,52 @@ def _get_group_by_and_sort_labels(
 def _title_format(
     ax : Axes,
     title : str,
-    **kwargs
+    title_kwargs : dict | None = None
 ) -> None:
-    """Sets ax's title properties to the given arguments"""
+    """Sets the title of ax, styled with defaults_ax_title.
 
-    final_kwargs : dict = {**defaults_ax_title, **kwargs}
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        title : str
+            Title text
+        title_kwargs : dict | None, default None
+            Style overrides (fontsize, color, ...) merged over
+            defaults_ax_title and forwarded to Axes.set_title
+    """
 
-    ax.set_title(
-        label=title,
-        **final_kwargs
-    )
+    final_kwargs : dict = {
+        'label':title,
+        **defaults_ax_title,
+        **(title_kwargs or {})
+    }
+
+    ax.set_title(**final_kwargs)
 
 def fig_suptitle_format(
     fig : Figure,
     title : str,
-    **kwargs
+    suptitle_kwargs : dict | None = None
 ) -> None:
-    """Sets figure's suptitle properties to the given arguments"""
+    """Sets the figure's suptitle, styled with defaults_fig_title.
 
-    final_kwargs : dict = {**defaults_fig_title, **kwargs}
+    Parameters
+    ---
+        fig : matplotlib.figure.Figure
+        title : str
+            Title text
+        suptitle_kwargs : dict | None, default None
+            Style overrides (fontsize, color, ...) merged over
+            defaults_fig_title and forwarded to Figure.suptitle
+    """
 
-    fig.suptitle(
-        t=title,
-        **final_kwargs
-    )
+    final_kwargs : dict = {
+        't':title,
+        **defaults_fig_title,
+        **(suptitle_kwargs or {})
+    }
+
+    fig.suptitle(**final_kwargs)
 
 def _visual_setup(
     ax : Axes,
@@ -519,6 +646,27 @@ def _visual_setup(
     kwargs_minor : dict | None = None,
     facecolor="#F0F0F0"
 ) -> None:
+    """Applies the shared visual style to ax.
+
+    Sets the background color, draws the grid behind the data (a stronger
+    major grid and a fainter minor one, with minor ticks enabled) and hides
+    the top and right spines. Called by every _draw_* function before it
+    draws anything.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        kwargs_major : dict | None, default None
+            Overrides for the major grid line style. Defaults are
+            color '#000000', alpha 0.20 and linestyle '-'
+            Forwarded to Axes.grid
+        kwargs_minor : dict | None, default None
+            Overrides for the minor grid line style. Defaults are
+            color '#000000', alpha 0.05 and linestyle '-'
+            Forwarded to Axes.grid
+        facecolor : str, default '#F0F0F0'
+            Background color of the plotting area
+    """
     grid_major_kwargs : dict = {
         'color':'#000000',
         'alpha':0.20,
@@ -571,27 +719,32 @@ def _draw_pie(
             Slice values. Must be non-negative
         labels : tuple | list
             Slice labels, aligned with x
-        autopct : str
-            Format string for the percentage shown on each slice
-        colors : list
-            Slice colors. Cycled if shorter than x
         title : str
+        colors : list[str]
+            Slice colors. Cycled if shorter than x
+        pie_kwargs : dict | None, default None
+            Overrides for the Axes.pie arguments. The defaults are
+            x=x, labels=labels, colors=colors and autopct='%1.1f%%'
+            (percentage shown on each slice)
+        title_kwargs : dict | None, default None
+            Style overrides for the title (see _title_format)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup
+            (kwargs_major, kwargs_minor, facecolor)
     """
     _visual_setup(ax, **(setup_kwargs or {}))
 
     pie_kwargs_all : dict = {
+        'x':x,
+        'labels':labels,
         'colors':colors,
         'autopct':'%1.1f%%',
         **(pie_kwargs or {})
     }
 
-    ax.pie(
-        x=x,
-        labels=labels,
-        **(pie_kwargs_all or {})
-    )
+    ax.pie(**pie_kwargs_all)
 
-    _title_format(ax, title, **(title_kwargs or {}))
+    _title_format(ax, title, title_kwargs)
 
 
 def _draw_barh(
@@ -601,7 +754,7 @@ def _draw_barh(
         title : str,
         xlabel : str,
         colors : list[str],
-        barh_kwargs_all : dict | None = None,
+        barh_kwargs : dict | None = None,
         title_kwargs : dict | None = None,
         setup_kwargs : dict | None = None
 ) -> None:
@@ -618,31 +771,39 @@ def _draw_barh(
             Bar labels, in top-to-bottom order. Converted to strings for display
         width : tuple | list
             Bar lengths, aligned with labels
-        color : list
-            Bar colors. Cycled if shorter than width
         title : str
         xlabel : str
             Label for the length axis
+        colors : list[str]
+            Bar colors. Cycled if shorter than bar amount (len(width))
+        barh_kwargs : dict | None, default None
+            Overrides for the Axes.barh arguments. The defaults are
+            y=range(len(labels)), width=width and color=colors.
+            Overriding y desyncs the bars from the tick labels
+        title_kwargs : dict | None, default None
+            Style overrides for the title (see _title_format)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup
+            (kwargs_major, kwargs_minor, facecolor)
     """
     _visual_setup(ax, **(setup_kwargs or {}))
-    barh_kwargs_all = {
-        'width':width,
-        'color':colors,
-        **(barh_kwargs_all or {})
-    }
 
     positions : range = range(len(labels))
-    ax.barh(
-        y=positions,  # draws at position first
-        **barh_kwargs_all
-    )
+    barh_kwargs_all : dict = {
+        'y':positions,  # draws at position first
+        'width':width,
+        'color':colors,
+        **(barh_kwargs or {})
+    }
+
+    ax.barh(**barh_kwargs_all)
     ax.set_yticks(
         positions,  # labels later
         labels=[str(label) for label in labels],
     )
     ax.invert_yaxis()
 
-    _title_format(ax, title, **(title_kwargs or {}))
+    _title_format(ax, title, title_kwargs)
 
     ax.set_xlabel(xlabel)
 
@@ -655,19 +816,34 @@ def _draw_hist(
         title_kwargs : dict | None = None,
         setup_kwargs : dict | None = None
 ) -> None:
-    """TBA
+    """Draws a histogram with a title on ax.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        x : pd.Series | pd.DataFrame
+            Numeric data to bin
+        color : str
+            Bar color
+        title : str
+        hist_kwargs : dict | None, default None
+            Overrides for the Axes.hist arguments (e.g. bins, alpha).
+            The defaults are x=x and color=color
+        title_kwargs : dict | None, default None
+            Style overrides for the title (see _title_format)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup
+            (kwargs_major, kwargs_minor, facecolor)
     """
     _visual_setup(ax, **(setup_kwargs or {}))
     hist_kwargs_all : dict = {
+        'x': x,
         'color': color,
         **(hist_kwargs or {})
     }
 
-    ax.hist(
-        x=x,
-        **hist_kwargs_all
-    )
-    _title_format(ax, title, **(title_kwargs or {}))
+    ax.hist(**hist_kwargs_all)
+    _title_format(ax, title, title_kwargs)
 
 def _draw_boxplot(
         ax : Axes,
@@ -679,19 +855,42 @@ def _draw_boxplot(
         title_kwargs : dict | None = None,
         setup_kwargs : dict | None = None
 ) -> None:
-    """TBA"""
+    """Draws a single box on ax at the given position, with a title.
+
+    Calling it more than once on the same ax puts several boxes side by
+    side (use different positions). The title is replaced on every call,
+    so the last call's title is the one that remains.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        x : pd.Series
+            Numeric data summarized by the box
+        label : str
+            Tick label shown under the box
+        position : float
+            Horizontal position of the box
+        title : str
+        boxplot_kwargs : dict | None, default None
+            Overrides for the Axes.boxplot arguments. The defaults are
+            x=x, positions=[position] and the tick label set to [label]
+            (passed as tick_labels, or as labels on matplotlib older than 3.9)
+        title_kwargs : dict | None, default None
+            Style overrides for the title (see _title_format)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup
+            (kwargs_major, kwargs_minor, facecolor)
+    """
     _visual_setup(ax, **(setup_kwargs or {}))
     boxplot_kwargs_all : dict = {
-        'tick_labels':[label],
+        'x':x,
+        _BOXPLOT_LABEL_KEY:[label],
         'positions':[position],
         **(boxplot_kwargs or {})
     }
-    ax.boxplot(
-        x=x,
-        **boxplot_kwargs_all
-    )
+    ax.boxplot(**boxplot_kwargs_all)
 
-    _title_format(ax, title, **(title_kwargs or {}))
+    _title_format(ax, title, title_kwargs)
 
 def _draw_lineplot(
         ax : Axes,
@@ -707,6 +906,35 @@ def _draw_lineplot(
         setup_kwargs : dict | None = None,
         legend_kwargs : dict | None = None
     ) -> None:
+    """Draws a line with a title, axis labels and an optional legend on ax.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        x : pd.Series | np.ndarray
+            Horizontal coordinates
+        y : pd.Series | np.ndarray
+            Vertical coordinates, aligned with x
+        xlabel : str
+        ylabel : str
+        title : str
+        color : str
+            Line color
+        label : str | None, default None
+            Legend entry for the line. The legend is only drawn if this
+            is not None
+        line_kwargs : dict | None, default None
+            Overrides for the Axes.plot arguments. The defaults are
+            color=color, label=label, lw=0.75 and alpha=1
+        title_kwargs : dict | None, default None
+            Style overrides for the title (see _title_format)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup
+            (kwargs_major, kwargs_minor, facecolor)
+        legend_kwargs : dict | None, default None
+            Overrides for the Axes.legend arguments. The default is
+            loc='lower right'. Only used if label is not None
+    """
     _visual_setup(ax, **(setup_kwargs or {}))
     line_kwargs_all : dict = {
         'color':color,
@@ -722,11 +950,7 @@ def _draw_lineplot(
         **line_kwargs_all
     )
 
-    _title_format(
-        ax,
-        title,
-        **(title_kwargs or {})
-    )
+    _title_format(ax, title, title_kwargs)
 
     if label is not None:
         legend_kwargs_all : dict = {
@@ -742,9 +966,68 @@ def draw_scatter(
         ax : Axes,
         x,
         y,
-        **kwargs
+        xlabel : str,
+        ylabel : str,
+        title : str,
+        color : str,
+        label : str | None = None,
+        scatter_kwargs : dict | None = None,
+        title_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None,
+        legend_kwargs : dict | None = None
     ) -> None:
-    ax.scatter(x, y, **kwargs)
+    """Draws a scatter plot with a title, axis labels and an optional legend on ax.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        x : array-like
+            Horizontal coordinates
+        y : array-like
+            Vertical coordinates, aligned with x
+        xlabel : str
+        ylabel : str
+        title : str
+        color : str
+            Marker color. To color the markers by value instead, pass
+            scatter_kwargs={'c': values, 'color': None}, since matplotlib
+            rejects c and color together
+        label : str | None, default None
+            Legend entry for the markers. The legend is only drawn if this
+            is not None
+        scatter_kwargs : dict | None, default None
+            Overrides for the Axes.scatter arguments (e.g. s, alpha, cmap).
+            The defaults are x=x, y=y, color=color and label=label
+        title_kwargs : dict | None, default None
+            Style overrides for the title (see _title_format)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup
+            (kwargs_major, kwargs_minor, facecolor)
+        legend_kwargs : dict | None, default None
+            Overrides for the Axes.legend arguments. The default is
+            loc='lower right'. Only used if label is not None
+    """
+    _visual_setup(ax, **(setup_kwargs or {}))
+    scatter_kwargs_all : dict = {
+        'x':x,
+        'y':y,
+        'color':color,
+        'label':label,
+        **(scatter_kwargs or {})
+    }
+    ax.scatter(**scatter_kwargs_all)
+
+    _title_format(ax, title, title_kwargs)
+
+    if label is not None:
+        legend_kwargs_all : dict = {
+            'loc':'lower right',
+            **(legend_kwargs or {})
+            }
+        ax.legend(**legend_kwargs_all)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
 
 def draw_line(
         ax : Axes,
@@ -758,6 +1041,37 @@ def draw_line(
         axline_kwargs : dict | None = None,
         legend_kwargs : dict | None = None
     ):
+    """Draws a horizontal or vertical reference line across ax.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        coord : float
+            Position of the line: the y value for a horizontal line or
+            the x value for a vertical one
+        linetype : str, default 'h'
+            'h' for a horizontal line, 'v' for a vertical one.
+            Any other value draws nothing
+        color : str, default '#3232'
+            Line color. The default is a semi-transparent color in
+            matplotlib's 4-digit RGBA hex format
+        ls : str, default '-'
+            Line style
+        lw : float, default 0.5
+            Line width
+        label : str | None, default None
+            Legend entry for the line. The line is created with an empty
+            label if None
+        show_label : bool, default False
+            If True and label is not None, a legend is drawn on ax.
+            The legend includes every labeled artist on ax, not only this line
+        axline_kwargs : dict | None, default None
+            Overrides for the Axes.axhline / Axes.axvline arguments
+            (y or x, color, ls, lw and label by default)
+        legend_kwargs : dict | None, default None
+            Overrides for the Axes.legend arguments. The default is
+            loc='lower right'. Only used if a legend is drawn
+    """
 
     axline_kwargs_all : dict = {
         'color':color,
@@ -769,15 +1083,9 @@ def draw_line(
 
     match linetype:
         case 'h':
-            ax.axhline(
-                coord,
-                **axline_kwargs_all
-            )
+            ax.axhline(**{'y':coord, **axline_kwargs_all})
         case 'v':
-            ax.axvline(
-                coord,
-                **axline_kwargs_all
-            )
+            ax.axvline(**{'x':coord, **axline_kwargs_all})
 
     if show_label:
         if label is not None:
@@ -797,6 +1105,26 @@ def make_color_zone(
         color : str | None = None,
         fill_between_kwargs : dict | None = None
     ):
+    """Shades the area between two curves (or two constant values) on ax.
+
+    Useful for highlighting ranges, such as a tolerance band or a
+    threshold zone. Thin wrapper around Axes.fill_between.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        x : array-like
+            Horizontal coordinates that define the zone
+        y1 : array-like | float
+            First boundary of the zone
+        y2 : array-like | float
+            Second boundary of the zone
+        color : str | None, default None
+            Fill color. If None, matplotlib picks one from its color cycle
+        fill_between_kwargs : dict | None, default None
+            Overrides for the Axes.fill_between arguments (e.g. alpha,
+            where, label). Take precedence over x, y1, y2 and color
+    """
     fill_between_kwargs_all : dict = {
         'x':x,
         'y1':y1,
@@ -804,9 +1132,7 @@ def make_color_zone(
         'color':color,
         **(fill_between_kwargs or {})
     }
-    ax.fill_between(
-        **(fill_between_kwargs_all or {})
-    )
+    ax.fill_between(**fill_between_kwargs_all)
 
 def plot_line_chart(
         x : pd.Series | np.ndarray,
@@ -821,51 +1147,88 @@ def plot_line_chart(
         title : str = '',
         line_kwargs : dict | None = None,
         title_kwargs : dict | None = None,
-        suptitle_kwargs : dict | None = None
-    ):
+        suptitle_kwargs : dict | None = None,
+        legend_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
+    ) -> Axes | tuple[Figure, np.ndarray]:
+    """Plots a line chart, either on an existing Axes or on a new figure.
+
+    Parameters
+    ---
+        x : pd.Series | np.ndarray
+            Horizontal coordinates
+        y : pd.Series | np.ndarray
+            Vertical coordinates, aligned with x
+        xlabel : str
+        ylabel : str
+        label : str
+            Legend entry for the line
+        color : str
+            Line color
+        ax : matplotlib.axes.Axes | None, default None
+            If given, the line is drawn on it and no figure is created.
+            If None, a new figure with a single subplot is created
+        fig_title : str, default ''
+            Title for the whole figure. Only used when ax is None
+        figsize : tuple, default (16, 6)
+            Figure size in inches, as (width, height).
+            Only used when ax is None
+        title : str, default ''
+            Title of the plot. If empty, '{xlabel} por {ylabel}' is used
+        line_kwargs : dict | None, default None
+            Overrides for the Axes.plot arguments (see _draw_lineplot)
+        title_kwargs : dict | None, default None
+            Style overrides for the plot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format).
+            Only used when ax is None
+        legend_kwargs : dict | None, default None
+            Overrides for the Axes.legend arguments (see _draw_lineplot)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup
+            (kwargs_major, kwargs_minor, facecolor)
+
+    Returns
+    ---
+        matplotlib.axes.Axes
+            The given ax, if ax was provided
+        tuple[matplotlib.figure.Figure, np.ndarray]
+            (fig, axs), if ax was None. axs is a 2D array holding a single Axes
+    """
 
     if title == '':
-        title = f'{xlabel} por {ylabel}'
-    
-    if ax:
-        _draw_lineplot(
-            ax=ax,
-            x=x,
-            y=y,
-            xlabel=xlabel,
-            ylabel=ylabel,
-            label=label,
-            title=title,
-            color=color,
-            line_kwargs=line_kwargs,
-            title_kwargs=title_kwargs
-        )
+        title = f'{ylabel} por {xlabel}'
 
-        return ax
-    else:
+    fig : Figure | None = None
+    axs : np.ndarray | None = None
+
+    if ax is None:
         fig, axs = create_fig(
             1,
             1,
-            figsize    
+            figsize
         )
+        ax = axs[0, 0]
+    _draw_lineplot(
+        ax=ax,
+        x=x,
+        y=y,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        label=label,
+        title=title,
+        color=color,
+        line_kwargs=line_kwargs,
+        title_kwargs=title_kwargs,
+        legend_kwargs=legend_kwargs,
+        setup_kwargs=setup_kwargs
+    )
 
-        ax = axs.flatten()[0]
-        
-        _draw_lineplot(
-            ax=ax,
-            x=x,
-            y=y,
-            xlabel=xlabel,
-            ylabel=ylabel,
-            title=title,
-            color=color,
-            title_kwargs=title_kwargs
-        )
+    if fig is None:
+        return ax
 
-        _hide_unused_axes(axs, len(x))
-        fig_suptitle_format(fig, fig_title, **suptitle_kwargs)
-
-        return fig, axs
+    fig_suptitle_format(fig, fig_title, suptitle_kwargs)
+    return fig, axs
 
 ### VALUE COUNTS
 
@@ -883,7 +1246,9 @@ def plot_value_counts_pie(
         dropna : bool = False,
         na_label : str = 'Sem dado',
         title_kwargs : dict | None = None,
-        suptitle_kwargs : dict | None = None
+        suptitle_kwargs : dict | None = None,
+        pie_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
 ) -> tuple[Figure, np.ndarray]:
     """Plots each column's value counts as a pie chart, one subplot per column.
 
@@ -894,6 +1259,7 @@ def plot_value_counts_pie(
         fig_title : str, default ''
             Title for the whole figure
         figsize : tuple, default (16, 6)
+            Figure size in inches, as (width, height)
         ncols : int, default 3
             Number of subplot columns. Unused subplots are hidden,
             row amount is calculated based on ncols
@@ -906,7 +1272,7 @@ def plot_value_counts_pie(
         color_dict : dict | None, default None
             label:color dictionary to color slices according to their label.
             Unmapped labels use generic_colors cycle
-        generic_colors : list | none, default None
+        generic_colors : list | None, default None
             If None, the default matplotlib color cycle will be used
         max_categories : int, default 5
             Maximum number of slices per chart, including the aggregated slice.
@@ -920,6 +1286,16 @@ def plot_value_counts_pie(
         na_label : str, default 'Sem dado'
             Label for the missing values slice when dropna is False.
             Should not match an existing category
+        title_kwargs : dict | None, default None
+            Style overrides for each subplot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+        pie_kwargs : dict | None, default None
+            Overrides for the Axes.pie arguments of every chart (e.g.
+            startangle). The default is autopct='%1.1f%%'
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup for every subplot
+            (kwargs_major, kwargs_minor, facecolor)
 
     Returns
     ---
@@ -941,14 +1317,8 @@ def plot_value_counts_pie(
     if generic_colors is None:
         generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-    fig, axs = create_fig(
-        nplots=len(data.columns),
-        ncols=ncols,
-        figsize=figsize
-    )
-
-    # items() yields one Series per column, even if column names are duplicated
-    for (col, series), ax in zip(data.items(), axs.flatten()):
+    def draw(ax : Axes, item : tuple) -> None:
+        col, series = item
         value_labels, value_counts = _get_value_counts_and_sort_labels(
             series,
             sort_alphabetically=sort_alphabetically,
@@ -966,13 +1336,21 @@ def plot_value_counts_pie(
             labels=value_labels,
             colors=ordered_colors,
             title=f'{title_prefix}{col}',
-            title_kwargs=title_kwargs
+            pie_kwargs=pie_kwargs,
+            title_kwargs=title_kwargs,
+            setup_kwargs=setup_kwargs
         )
 
-    _hide_unused_axes(axs, len(data.columns))
+    # items() yields one Series per column, even if column names are duplicated
+    return _plot_grid(
+        items=data.items(),
+        draw=draw,
+        ncols=ncols,
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
+    )
 
-    fig_suptitle_format(fig, fig_title, **(suptitle_kwargs or {}))
-    return fig, axs
 
 def plot_value_counts(
         data : pd.DataFrame,
@@ -989,7 +1367,9 @@ def plot_value_counts(
         dropna : bool = False,
         na_label : str = 'Sem dado',
         title_kwargs : dict | None = None,
-        suptitle_kwargs : dict | None = None
+        suptitle_kwargs : dict | None = None,
+        barh_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """Plots each column's value counts as a horizontal bar chart, one subplot per column.
 
@@ -1004,6 +1384,7 @@ def plot_value_counts(
         fig_title : str, default ''
             Title for the whole figure
         figsize : tuple, default (16, 6)
+            Figure size in inches, as (width, height)
         ncols : int, default 3
             Number of subplot columns. Unused subplots are hidden,
             row amount is calculated based on ncols
@@ -1032,6 +1413,16 @@ def plot_value_counts(
         na_label : str, default 'Sem dado'
             Label for the missing values bar when dropna is False.
             Should not match an existing category
+        title_kwargs : dict | None, default None
+            Style overrides for each subplot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+        barh_kwargs : dict | None, default None
+            Overrides for the Axes.barh arguments of every chart (e.g.
+            height, edgecolor)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup for every subplot
+            (kwargs_major, kwargs_minor, facecolor)
 
     Returns
     ---
@@ -1050,13 +1441,8 @@ def plot_value_counts(
         ncols=ncols
     )
 
-    fig, axs = create_fig(
-        nplots=len(data.columns),
-        ncols=ncols,
-        figsize=figsize
-    )
-
-    for (col, series), ax in zip(data.items(), axs.flatten()):
+    def draw(ax : Axes, item : tuple) -> None:
+        col, series = item
         value_labels, value_counts = _get_value_counts_and_sort_labels(
             series,
             sort_alphabetically=sort_alphabetically,
@@ -1075,13 +1461,21 @@ def plot_value_counts(
             colors=ordered_colors,
             title=f'{title_prefix}{col}',
             xlabel=xlabel,
-            title_kwargs=title_kwargs
+            barh_kwargs=barh_kwargs,
+            title_kwargs=title_kwargs,
+            setup_kwargs=setup_kwargs
         )
 
-    _hide_unused_axes(axs, len(data.columns))
+    # items() yields one Series per column, even if column names are duplicated
+    return _plot_grid(
+        items=data.items(),
+        draw=draw,
+        ncols=ncols,
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
+    )
 
-    fig_suptitle_format(fig, fig_title, **(suptitle_kwargs or {}))
-    return fig, axs
 
 ### HISTOGRAM
 
@@ -1093,34 +1487,77 @@ def plot_hist(
         title_prefix : str = 'Distribuição de clientes por ',
         color : str = 'blue',
         title_kwargs : dict | None = None,
-        suptitle_kwargs : dict | None = None
+        suptitle_kwargs : dict | None = None,
+        hist_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
-    """TBA
+    """Plots a histogram of each column of data, one subplot per column.
+
+    Parameters
+    ---
+        data : pd.DataFrame
+            One histogram is drawn per column in data. Must not be empty
+            and should contain only numeric columns
+        fig_title : str, default ''
+            Title for the whole figure
+        figsize : tuple, default (16, 6)
+            Figure size in inches, as (width, height)
+        ncols : int, default 3
+            Number of subplot columns. Unused subplots are hidden,
+            row amount is calculated based on ncols
+            Must be at least 1
+        title_prefix : str, default 'Distribuição de clientes por '
+            Text concatenated before the column name in each subplot title
+        color : str, default 'blue'
+            Bar color of every histogram
+        title_kwargs : dict | None, default None
+            Style overrides for each subplot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+        hist_kwargs : dict | None, default None
+            Overrides for the Axes.hist arguments of every histogram (e.g.
+            bins, alpha)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup for every subplot
+            (kwargs_major, kwargs_minor, facecolor)
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols)
+
+    Raises
+    ---
+        ValueError
+            If data is empty or ncols is less than 1
     """
     _validation_batch_plotters(
         data=data,
         ncols=ncols
     )
 
-    fig, axs = create_fig(
-        nplots=len(data.columns),
-        ncols=ncols,
-        figsize=figsize
-    )
-
-    for (col, series), ax in zip(data.items(), axs.flatten()):
+    def draw(ax : Axes, item : tuple) -> None:
+        col, series = item
         _draw_hist(
             ax=ax,
             x=series,
             color=color,
             title=f'{title_prefix}{col}',
-            title_kwargs=title_kwargs
+            hist_kwargs=hist_kwargs,
+            title_kwargs=title_kwargs,
+            setup_kwargs=setup_kwargs
         )
 
-    _hide_unused_axes(axs, len(data.columns))
-    
-    fig_suptitle_format(fig, fig_title, **(suptitle_kwargs or {}))
-    return fig, axs
+    return _plot_grid(
+        items=data.items(),
+        draw=draw,
+        ncols=ncols,
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
+    )
+
 
 def plot_alternating_hist(
         data1 : pd.DataFrame,
@@ -1133,50 +1570,105 @@ def plot_alternating_hist(
         title_prefix : str = 'Distribuição por ',
         color : str = 'blue',
         title_kwargs : dict | None = None,
-        suptitle_kwargs : dict | None = None
+        suptitle_kwargs : dict | None = None,
+        hist_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
-    """TBA
+    """Plots histograms of two samples in alternation, for easy comparison.
+
+    Columns are matched by name, in the order they appear in data1. For
+    each column present in both DataFrames, the data1 histogram is drawn on
+    one subplot and the data2 histogram on the next one, so the grid reads
+    (col 1 of data1, col 1 of data2, col 2 of data1, ...). Columns that
+    exist in only one of the DataFrames are skipped.
+
+    Parameters
+    ---
+        data1 : pd.DataFrame
+            First sample. Must not be empty and should contain only
+            numeric columns. Column names must be unique
+        data2 : pd.DataFrame
+            Second sample. Must not be empty and should contain only
+            numeric columns. Column names must be unique
+        data1_label : str, default 'Sample 1'
+            Name of the first sample, appended to its subplot titles
+        data2_label : str, default 'Sample 2'
+            Name of the second sample, appended to its subplot titles
+        fig_title : str, default ''
+            Title for the whole figure
+        figsize : tuple, default (16, 6)
+            Figure size in inches, as (width, height)
+        ncols : int, default 3
+            Number of subplot columns. Must be at least 1.
+            Two subplots are used per column, so an even value
+            keeps each pair on the same row
+        title_prefix : str, default 'Distribuição por '
+            Text concatenated before the column name in each subplot title
+            Titles follow the format '{title_prefix}{column} - {label}'
+        color : str, default 'blue'
+            Bar color of every histogram
+        title_kwargs : dict | None, default None
+            Style overrides for each subplot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+        hist_kwargs : dict | None, default None
+            Overrides for the Axes.hist arguments of every histogram (e.g.
+            bins, alpha)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup for every subplot
+            (kwargs_major, kwargs_minor, facecolor)
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols), where nrows
+            fits 2 * (number of shared columns) subplots.
+            Unused subplots are hidden
+
+    Raises
+    ---
+        ValueError
+            If data1 or data2 is empty, ncols is less than 1, either
+            DataFrame has duplicate column names, or they share no column
     """
     _validation_batch_plotters(
         data=data1,
         ncols=ncols
     )
-    
     _validation_batch_plotters(
         data=data2
     )
+    common_cols : list = _get_common_columns(data1, data2)
 
-    fig, axs = create_fig(
-        nplots=len(data1.columns)*2,
+    # (series, title) pairs: data1 then data2 for each shared column
+    panels : list = [
+        (data[col], f'{title_prefix}{col} - {label}')
+        for col in common_cols
+        for data, label in ((data1, data1_label), (data2, data2_label))
+    ]
+
+    def draw(ax : Axes, panel : tuple) -> None:
+        series, title = panel
+        _draw_hist(
+            ax=ax,
+            x=series,
+            color=color,
+            title=title,
+            hist_kwargs=hist_kwargs,
+            title_kwargs=title_kwargs,
+            setup_kwargs=setup_kwargs
+        )
+
+    return _plot_grid(
+        items=panels,
+        draw=draw,
         ncols=ncols,
-        figsize=figsize
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
     )
 
-    
-    axs_flattened = axs.flatten()
-    ax_count : int = len(axs_flattened)
-
-    for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(0, ax_count, 2)):
-        if col1 in data2.columns:
-            _draw_hist(
-                ax=axs_flattened[ax_idx],
-                x=series1,
-                color=color,
-                title=f'{title_prefix}{col1} - {data1_label}',
-                title_kwargs=title_kwargs
-            )
-            _draw_hist(
-                ax=axs_flattened[ax_idx + 1],
-                x=series2,
-                color=color,
-                title=f'{title_prefix}{col2} - {data2_label}',
-                title_kwargs=title_kwargs
-            )
-
-    _hide_unused_axes(axs, ax_count)
-
-    fig_suptitle_format(fig, fig_title, **(suptitle_kwargs or {}))
-    return fig, axs
 
 ### GROUPED SUMS
 def plot_group_variable_sum_into_pie(
@@ -1194,7 +1686,9 @@ def plot_group_variable_sum_into_pie(
         dropna : bool = False,
         na_label : str = 'Sem dado',
         title_kwargs : dict | None = None,
-        suptitle_kwargs : dict | None = None
+        suptitle_kwargs : dict | None = None,
+        pie_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """Plots, for each column of data, a pie chart of target_col's sum per category.
 
@@ -1216,6 +1710,7 @@ def plot_group_variable_sum_into_pie(
         fig_title : str, default ''
             Title for the whole figure
         figsize : tuple, default (16, 6)
+            Figure size in inches, as (width, height)
         ncols : int, default 3
             Number of subplot columns. Must be at least 1.
             Unused subplots are hidden, row amount is calculated based on ncols
@@ -1227,7 +1722,7 @@ def plot_group_variable_sum_into_pie(
         color_dict : dict | None, default None
             label:color dictionary to color slices according to their label.
             Unmapped labels use generic_colors cycle
-        generic_colors : list | none, default None
+        generic_colors : list | None, default None
             If None, the default matplotlib color cycle will be used
         max_categories : int, default 5
             Maximum number of slices per chart, including the aggregated slice.
@@ -1242,6 +1737,16 @@ def plot_group_variable_sum_into_pie(
         na_label : str, default 'Sem dado'
             Label for the missing category slice when dropna is False.
             Should not match an existing category
+        title_kwargs : dict | None, default None
+            Style overrides for each subplot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+        pie_kwargs : dict | None, default None
+            Overrides for the Axes.pie arguments of every chart (e.g.
+            startangle). The default is autopct='%1.1f%%'
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup for every subplot
+            (kwargs_major, kwargs_minor, facecolor)
 
     Returns
     ---
@@ -1269,15 +1774,9 @@ def plot_group_variable_sum_into_pie(
     group_cols : list = [col for col in data.columns if col != target_col]
 
     if generic_colors is None:
-            generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-    fig, axs = create_fig(
-        nplots=len(group_cols),
-        ncols=ncols,
-        figsize=figsize
-    )
-
-    for col, ax in zip(group_cols, axs.flatten()):
+    def draw(ax : Axes, col : Hashable) -> None:
         value_labels, value_sums = _get_group_by_and_sort_labels(
             data[[col, target_col]],
             group_by=col,
@@ -1297,13 +1796,20 @@ def plot_group_variable_sum_into_pie(
             labels=value_labels,
             colors=ordered_colors,
             title=f'{title_prefix}{col}',
-            title_kwargs=title_kwargs
+            pie_kwargs=pie_kwargs,
+            title_kwargs=title_kwargs,
+            setup_kwargs=setup_kwargs
         )
 
-    _hide_unused_axes(axs, len(group_cols))
+    return _plot_grid(
+        items=group_cols,
+        draw=draw,
+        ncols=ncols,
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
+    )
 
-    fig_suptitle_format(fig, fig_title, **(suptitle_kwargs or {}))
-    return fig, axs
 
 def plot_group_variable_sum_into_barh(
         data : pd.DataFrame,
@@ -1321,7 +1827,9 @@ def plot_group_variable_sum_into_barh(
         dropna : bool = False,
         na_label : str = 'Sem dado',
         title_kwargs : dict | None = None,
-        suptitle_kwargs : dict | None = None
+        suptitle_kwargs : dict | None = None,
+        barh_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
     """Plots, for each column of data, a horizontal bar chart of target_col's sum per category.
 
@@ -1343,6 +1851,7 @@ def plot_group_variable_sum_into_barh(
         fig_title : str, default ''
             Title for the whole figure
         figsize : tuple, default (16, 6)
+            Figure size in inches, as (width, height)
         ncols : int, default 3
             Number of subplot columns. Must be at least 1.
             Unused subplots are hidden, row amount is calculated based on ncols
@@ -1371,6 +1880,16 @@ def plot_group_variable_sum_into_barh(
         na_label : str, default 'Sem dado'
             Label for the missing category bar when dropna is False.
             Should not match an existing category
+        title_kwargs : dict | None, default None
+            Style overrides for each subplot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+        barh_kwargs : dict | None, default None
+            Overrides for the Axes.barh arguments of every chart (e.g.
+            height, edgecolor)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup for every subplot
+            (kwargs_major, kwargs_minor, facecolor)
 
     Returns
     ---
@@ -1397,13 +1916,7 @@ def plot_group_variable_sum_into_barh(
 
     group_cols : list = [col for col in data.columns if col != target_col]
 
-    fig, axs = create_fig(
-        nplots=len(group_cols),
-        ncols=ncols,
-        figsize=figsize
-    )
-
-    for col, ax in zip(group_cols, axs.flatten()):
+    def draw(ax : Axes, col : Hashable) -> None:
         value_labels, value_sums = _get_group_by_and_sort_labels(
             data[[col, target_col]],
             group_by=col,
@@ -1424,13 +1937,20 @@ def plot_group_variable_sum_into_barh(
             colors=ordered_colors,
             title=f'{title_prefix}{col}',
             xlabel=xlabel,
-            title_kwargs=title_kwargs
+            barh_kwargs=barh_kwargs,
+            title_kwargs=title_kwargs,
+            setup_kwargs=setup_kwargs
         )
 
-    _hide_unused_axes(axs, len(group_cols))
+    return _plot_grid(
+        items=group_cols,
+        draw=draw,
+        ncols=ncols,
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
+    )
 
-    fig_suptitle_format(fig, fig_title, **(suptitle_kwargs or {}))
-    return fig, axs
 
 def plot_alternating_value_counts_barh(
         data1 : pd.DataFrame,
@@ -1450,33 +1970,48 @@ def plot_alternating_value_counts_barh(
         dropna : bool = False,
         na_label : str = 'Sem dado',
         title_kwargs : dict | None = None,
-        suptitle_kwargs : dict | None = None
+        suptitle_kwargs : dict | None = None,
+        barh_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
-    """Plots, for each column of data1 and data2 in alternation,
-    a horizontal bar chart of value counts. Good for comparisons.
+    """Plots the value counts of two samples as horizontal bar charts, in alternation.
+    Good for comparisons.
+
+    Columns are matched by name, in the order they appear in data1. For
+    each column present in both DataFrames, the data1 chart is drawn on
+    one subplot and the data2 chart on the next one, so the grid reads
+    (col 1 of data1, col 1 of data2, col 2 of data1, ...). Columns that
+    exist in only one of the DataFrames are skipped. Bars are listed top
+    to bottom: by descending frequency, or alphabetically if
+    sort_alphabetically is True. The aggregated bar is always last.
 
     Parameters
     ---
         data1 : pd.DataFrame
-            One bar chart is drawn per column in data1
-            Must not be empty
+            First sample. Must not be empty. Column names must be unique
         data2 : pd.DataFrame
-            One bar chart is drawn per column in data2
-            Must not be empty
+            Second sample. Must not be empty. Column names must be unique
+        data1_label : str, default 'Sample 1'
+            Name of the first sample, appended to its subplot titles
+        data2_label : str, default 'Sample 2'
+            Name of the second sample, appended to its subplot titles
         fig_title : str, default ''
             Title for the whole figure
         figsize : tuple, default (16, 6)
+            Figure size in inches, as (width, height)
         ncols : int, default 2
             Number of subplot columns. Must be at least 1.
-            Unused subplots are hidden, row amount is calculated based on ncols
-            For ease of reading, it is reccomended to be an even value
+            Row amount is calculated based on ncols.
+            Two subplots are used per column, so an even value
+            is recommended to keep each pair on the same row
         sort_alphabetically : bool, default False
             If True, bars are ordered alphabetically by label instead of by
-            summed value. The aggregated bar is always placed last
-        title_prefix : str, default 'Agrupamento por '
-            Text concatenated before the column name in each subplot title
+            frequency. The aggregated bar is always placed last
+        title_prefix : str, default 'Clientes por '
+            Text concatenated before the column name in each subplot title.
+            Titles follow the format '{title_prefix}{column} - {label}'
         xlabel : str, default 'Qtd'
-            Label for the value axis of every subplot
+            Label for the count axis of every subplot
         color_dict : dict | None, default None
             label:color dictionary to color bars according to their label.
             Unmapped labels use generic_color
@@ -1484,99 +2019,93 @@ def plot_alternating_value_counts_barh(
             Color for every bar whose label is not in color_dict
         max_categories : int, default 10
             Maximum number of bars per chart, including the aggregated bar.
-            Categories with the smallest sums are merged into other_label.
+            Less frequent categories are summed into other_label.
             Must be 2 or higher
         other_label : str, default 'Outros'
-            Label for the bar that aggregates the smallest categories.
+            Label for the bar that aggregates the least frequent categories.
             Should not match an existing category
         dropna : bool, default False
-            If False, rows with a missing category are grouped into their
-            own bar (see na_label)
+            If False, missing values are shown as their own bar (see na_label)
         na_label : str, default 'Sem dado'
-            Label for the missing category bar when dropna is False.
+            Label for the missing values bar when dropna is False.
             Should not match an existing category
+        title_kwargs : dict | None, default None
+            Style overrides for each subplot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+        barh_kwargs : dict | None, default None
+            Overrides for the Axes.barh arguments of every chart (e.g.
+            height, edgecolor)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup for every subplot
+            (kwargs_major, kwargs_minor, facecolor)
 
     Returns
     ---
         fig : matplotlib.figure.Figure
         axs : np.ndarray
-            2D array of Axes with shape (nrows, ncols)
+            2D array of Axes with shape (nrows, ncols), where nrows
+            fits 2 * (number of shared columns) subplots.
+            Unused subplots are hidden
 
     Raises
     ---
         ValueError
-            If data1 or data2 is empty, max_categories is less than 2, ncols is less
-            than 1, column names are duplicated, or target_col is missing,
-            non-numeric or the only column
+            If data1 or data2 is empty, max_categories is less than 2,
+            ncols is less than 1, either DataFrame has duplicate column
+            names, or they share no column
     """
     _validation_batch_plotters(
         data=data1,
         max_categories=max_categories,
         ncols=ncols
-        )
+    )
     _validation_batch_plotters(
         data=data2
     )
+    common_cols : list = _get_common_columns(data1, data2)
 
-    fig, axs = create_fig(
-        nplots=len(data1.columns)*2,
+    # (series, title) pairs: data1 then data2 for each shared column
+    panels : list = [
+        (data[col], f'{title_prefix}{col} - {label}')
+        for col in common_cols
+        for data, label in ((data1, data1_label), (data2, data2_label))
+    ]
+
+    def draw(ax : Axes, panel : tuple) -> None:
+        series, title = panel
+        value_labels, value_counts = _get_value_counts_and_sort_labels(
+            series,
+            sort_alphabetically=sort_alphabetically,
+            max_categories=max_categories,
+            other_label=other_label,
+            dropna=dropna,
+            na_label=na_label
+        )
+
+        ordered_colors : list = _sort_colors(color_dict, value_labels, [generic_color])
+
+        _draw_barh(
+            ax=ax,
+            labels=value_labels,
+            width=value_counts,
+            colors=ordered_colors,
+            title=title,
+            xlabel=xlabel,
+            barh_kwargs=barh_kwargs,
+            title_kwargs=title_kwargs,
+            setup_kwargs=setup_kwargs
+        )
+
+    return _plot_grid(
+        items=panels,
+        draw=draw,
         ncols=ncols,
-        figsize=figsize
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
     )
 
-    axs_flattened = axs.flatten()
-    ax_count : int = len(axs_flattened)
-
-    for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(0, ax_count, 2)):
-        if col1 in data2.columns:
-            value_labels1, value_counts1 = _get_value_counts_and_sort_labels(
-                series1,
-                sort_alphabetically=sort_alphabetically,
-                max_categories=max_categories,
-                other_label=other_label,
-                dropna=dropna,
-                na_label=na_label
-            )
-
-            ordered_colors : list = _sort_colors(color_dict, value_labels1, [generic_color])
-
-            _draw_barh(
-                ax=axs_flattened[ax_idx],
-                labels=value_labels1,
-                width=value_counts1,
-                colors=ordered_colors,
-                title=f'{title_prefix}{col1} - {data1_label}',
-                xlabel=xlabel,
-                title_kwargs=title_kwargs
-            )
-
-            value_labels2, value_counts2 = _get_value_counts_and_sort_labels(
-                series2,
-                sort_alphabetically=sort_alphabetically,
-                max_categories=max_categories,
-                other_label=other_label,
-                dropna=dropna,
-                na_label=na_label
-            )
-
-            ordered_colors : list = _sort_colors(color_dict, value_labels2, [generic_color])
-
-            _draw_barh(
-                ax=axs_flattened[ax_idx + 1],
-                labels=value_labels2,
-                width=value_counts2,
-                colors=ordered_colors,
-                title=f'{title_prefix}{col2} - {data2_label}',
-                xlabel=xlabel,
-                title_kwargs=title_kwargs
-            )
-
-
-
-    _hide_unused_axes(axs, ax_count)
-
-    fig_suptitle_format(fig, fig_title, **(suptitle_kwargs or {}))
-    return fig, axs
 
 def plot_comparing_box(
         data1 : pd.DataFrame,
@@ -1589,49 +2118,94 @@ def plot_comparing_box(
         title_prefix : str = 'Clientes por ',
         max_categories : int = 10,
         title_kwargs : dict | None = None,
-        suptitle_kwargs : dict | None = None
+        suptitle_kwargs : dict | None = None,
+        boxplot_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
     ) -> tuple[Figure, np.ndarray]:
-    """TBA
+    """Plots, for each column, a box plot of data1 next to one of data2 on the same subplot.
+
+    Columns are matched by name, in the order they appear in data1. Each
+    column present in both DataFrames gets one subplot, with the data1 box
+    at position 0 and the data2 box at position 1, labeled by data1_label
+    and data2_label. Columns that exist in only one of the DataFrames are
+    skipped.
+
+    Parameters
+    ---
+        data1 : pd.DataFrame
+            First sample. Must not be empty and should contain only
+            numeric columns. Column names must be unique
+        data2 : pd.DataFrame
+            Second sample. Must not be empty and should contain only
+            numeric columns. Column names must be unique
+        data1_label : str, default 'Sample 1'
+            Tick label of the first sample's box
+        data2_label : str, default 'Sample 2'
+            Tick label of the second sample's box
+        fig_title : str, default ''
+            Title for the whole figure
+        figsize : tuple, default (16, 6)
+            Figure size in inches, as (width, height)
+        ncols : int, default 2
+            Number of subplot columns. Must be at least 1.
+            Row amount is calculated based on ncols
+        title_prefix : str, default 'Clientes por '
+            Text concatenated before the column name in each subplot title
+        title_kwargs : dict | None, default None
+            Style overrides for each subplot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+        boxplot_kwargs : dict | None, default None
+            Overrides for the Axes.boxplot arguments of both boxes (e.g.
+            showfliers, notch). Overriding positions or tick labels
+            would affect both boxes, so leave those alone
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup for every subplot
+            (kwargs_major, kwargs_minor, facecolor)
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols), where nrows
+            fits one subplot per shared column. Unused subplots are hidden
+
+    Raises
+    ---
+        ValueError
+            If data1 or data2 is empty, ncols is less than 1, either
+            DataFrame has duplicate column names, or they share no column
     """
     _validation_batch_plotters(
         data=data1,
-        max_categories=max_categories,
         ncols=ncols
-        )
+    )
     _validation_batch_plotters(
         data=data2
     )
+    common_cols : list = _get_common_columns(data1, data2)
 
-    fig, axs = create_fig(
-        nplots=len(data1.columns),
+    def draw(ax : Axes, col : Hashable) -> None:
+        for series, label, position in (
+            (data1[col], data1_label, 0),
+            (data2[col], data2_label, 1)
+        ):
+            _draw_boxplot(
+                ax=ax,
+                x=series,
+                label=label,
+                position=position,
+                title=f'{title_prefix}{col}',
+                boxplot_kwargs=boxplot_kwargs,
+                title_kwargs=title_kwargs,
+                setup_kwargs=setup_kwargs
+            )
+
+    return _plot_grid(
+        items=common_cols,
+        draw=draw,
         ncols=ncols,
-        figsize=figsize
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
     )
-
-    axs_flattened = axs.flatten()
-    ax_count : int = len(axs_flattened)
-
-    for (col1, series1), (col2, series2), ax_idx in zip(data1.items(), data2.items(), range(ax_count)):
-        if col1 in data2.columns:
-            _draw_boxplot(
-                ax=axs_flattened[ax_idx],
-                x=series1,
-                label=data1_label,
-                position=0,
-                title=f'{title_prefix}{col1}',
-                title_kwargs=title_kwargs
-            )
-
-            _draw_boxplot(
-                ax=axs_flattened[ax_idx],
-                x=series2,
-                label=data2_label,
-                position=1,
-                title=f'{title_prefix}{col2}',
-                title_kwargs=title_kwargs
-            )
-
-    _hide_unused_axes(axs, ax_count)
-
-    fig_suptitle_format(fig, fig_title, **(suptitle_kwargs or {}))
-    return fig, axs
