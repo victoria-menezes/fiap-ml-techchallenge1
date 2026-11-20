@@ -7,14 +7,23 @@ import pandas as pd
 import pytest
 
 from data_visualizer import (
-    _get_number_of_rows,
+_get_number_of_rows,
     _sort_labels_alphabetically,
     _group_overflow,
     _sort_colors,
     _get_value_counts_and_sort_labels,
+    _get_group_by_and_sort_labels,
     _validation_batch_plotters,
+    _validation_batch_groupers,
     plot_value_counts_pie,
     plot_value_counts,
+    plot_hist,
+    plot_alternating_hist,
+    plot_group_variable_sum_into_pie,
+    plot_group_variable_sum_into_barh,
+    plot_alternating_value_counts_barh,
+    plot_comparing_box,
+    plot_line_chart,
 )
 
 
@@ -110,7 +119,6 @@ class TestSortColors:
         assert result == ['g0', 'blue', 'g1']
 
 class TestPlotArgValidation:
-
     def test_no_arguments_does_not_raise(self):
         _validation_batch_plotters()
 
@@ -142,10 +150,34 @@ class TestPlotArgValidation:
         with pytest.raises(ValueError, match='ncols'):
             _validation_batch_plotters(ncols=0)
 
+class TestValidationBatchGroupers:
+    def test_does_not_raise_on_valid(self):
+        df = pd.DataFrame({'cat':['a', 'b'], 'val': [10, 20]})
+        _validation_batch_groupers(df, target_col='val')
+
+    def test_rejects_duplicate_columns(self):
+        df = pd.DataFrame([[1,2,3]], columns=['a', 'b', 'a'])
+        with pytest.raises(ValueError, match='duplicate column names'):
+            _validation_batch_groupers(df, target_col='b')
+   
+    def test_rejects_missing_target_col(self):
+        df = pd.DataFrame({'cat': ['a', 'b'], 'val': [10, 20]})
+        with pytest.raises(ValueError, match='not found in data'):
+            _validation_batch_groupers(df, target_col='missing')
+
+    def test_rejects_non_numeric_target_col(self):
+        df = pd.DataFrame({'cat': ['a', 'b'], 'val': ['x', 'y']})
+        with pytest.raises(ValueError, match='must be numeric'):
+            _validation_batch_groupers(df, target_col='val')
+
+    def test_rejects_insufficient_columns(self):
+        df = pd.DataFrame({'val': [10, 20]})
+        with pytest.raises(ValueError, match='needs at least one column besides target_col'):
+            _validation_batch_groupers(df, target_col='val')
 
 @pytest.mark.parametrize('plot', [plot_value_counts_pie, plot_value_counts])
 class TestPlotFunctionsValidation:
-    """Both public functions must validate before drawing anything."""
+    """Functions must validate before drawing anything."""
 
     def test_rejects_empty_dataframe(self, plot):
         with pytest.raises(ValueError, match='empty'):
@@ -162,6 +194,20 @@ class TestPlotFunctionsValidation:
     def test_no_figure_is_created_when_validation_fails(self, plot):
         with pytest.raises(ValueError):
             plot(pd.DataFrame({'a': ['x']}), ncols=0)
+        assert plt.get_fignums() == []
+
+class TestPlotHistValidation:
+    def test_rejects_empty_dataframe(self):
+        with pytest.raises(ValueError, match='empty'):
+            plot_hist(pd.DataFrame())
+
+    def test_rejects_small_ncols(self):
+        with pytest.raises(ValueError, match='ncols'):
+            plot_hist(pd.DataFrame({'a': [1, 2]}), ncols=0)
+
+    def test_no_figure_is_created_when_validation_fails(self):
+        with pytest.raises(ValueError):
+            plot_hist(pd.DataFrame({'a': [1, 2]}), ncols=0)
         assert plt.get_fignums() == []
 
 class TestGetValueLabelsAndCounts:
@@ -240,8 +286,74 @@ class TestGetValueLabelsAndCounts:
         _get_value_counts_and_sort_labels(series)
         pd.testing.assert_series_equal(series, before)
 
+class TestGetGroupByAndSortLabels:
+    def test_sums_correctly_per_category(self):
+        df = pd.DataFrame({'cat': ['A', 'A', 'B', 'B', 'C'], 'val': [10, 5, 20, 10, 50]})
+        labels, sums = _get_group_by_and_sort_labels(df, group_by='cat', target_col='val')
+        assert labels == ('C', 'B', 'A')
+        assert sums == (50, 30, 15)
 
-###
+    def test_group_by_overflow_and_sorting(self):
+        df = pd.DataFrame({'cat': ['A', 'B', 'C', 'D'], 'val': [10, 40, 20, 30]})
+        labels, sums = _get_group_by_and_sort_labels(
+            df, group_by='cat', target_col='val', max_categories=2
+        )
+        assert labels == ('B', 'Outros')
+        assert sums == (40, 60)
+
+class TestAdditionalPlotFunctions:
+    def test_plot_hist(self):
+        df = pd.DataFrame({'a': [1, 2, 2, 3, 3, 3]})
+        fig, axs = plot_hist(df)
+        assert isinstance(fig, plt.Figure)
+        assert axs.shape == (1, 1)
+
+    def test_plot_alternating_hist(self):
+        df1 = pd.DataFrame({'a': [1, 2, 3]})
+        df2 = pd.DataFrame({'a': [4, 5, 6]})
+        fig, axs = plot_alternating_hist(df1, df2)
+        assert isinstance(fig, plt.Figure)
+        assert axs.shape == (1, 2)
+
+    def test_plot_group_variable_sum_into_pie(self):
+        df = pd.DataFrame({'cat': ['A', 'B', 'A', 'B'], 'val': [10, 20, 30, 40]})
+        fig, axs = plot_group_variable_sum_into_pie(df, target_col='val')
+        assert isinstance(fig, plt.Figure)
+        assert axs.shape == (1, 1)
+
+    def test_plot_group_variable_sum_into_barh(self):
+        df = pd.DataFrame({'cat': ['A', 'B', 'A', 'B'], 'val': [10, 20, 30, 40]})
+        fig, axs = plot_group_variable_sum_into_barh(df, target_col='val')
+        assert isinstance(fig, plt.Figure)
+        assert axs.shape == (1, 1)
+
+    def test_plot_alternating_value_counts_barh(self):
+        df1 = pd.DataFrame({'cat': ['A', 'B', 'A']})
+        df2 = pd.DataFrame({'cat': ['B', 'B', 'C']})
+        fig, axs = plot_alternating_value_counts_barh(df1, df2)
+        assert isinstance(fig, plt.Figure)
+        assert axs.shape == (1, 2)
+
+    def test_plot_comparing_box(self):
+        df1 = pd.DataFrame({'val': [1, 2, 3, 4, 5]})
+        df2 = pd.DataFrame({'val': [2, 3, 4, 5, 6]})
+        fig, axs = plot_comparing_box(df1, df2)
+        assert isinstance(fig, plt.Figure)
+        assert axs.shape == (1, 1)
+
+    def test_plot_line_chart_axes_provided(self):
+        fig_base, ax_base = plt.subplots()
+        x = np.linspace(0, 10, 5)
+        y = np.sin(x)
+        ax = plot_line_chart(x=x, y=y, xlabel='X', ylabel='Y', label='Sine', color='red', ax=ax_base)
+        assert ax == ax_base
+
+    def test_plot_line_chart_new_figure(self):
+        x = np.linspace(0, 10, 5)
+        y = np.sin(x)
+        fig, axs = plot_line_chart(x=x, y=y, xlabel='X', ylabel='Y', label='Sine', color='red')
+        assert isinstance(fig, plt.Figure)
+        assert isinstance(axs, np.ndarray)
 
 class _SharedPlotTests:
     """Behavior common to plot_value_counts_pie and plot_value_counts.

@@ -109,6 +109,49 @@ def _validation_batch_groupers(
     if len(data.columns) < 2:
         raise ValueError('data needs at least one column besides target_col')
 
+def _validation_batch_comparers(
+        data1 : pd.DataFrame,
+        data2 : pd.DataFrame,
+        max_categories : int | None = None,
+        ncols : int | None = None
+    ) -> list:
+    """Validates the arguments of the two-sample plotting functions and
+    finds the columns they will compare.
+
+    Parameters
+    ---
+        data1 : pd.DataFrame
+            Must not be empty. Column names must be unique
+        data2 : pd.DataFrame
+            Must not be empty. Column names must be unique
+        max_categories : int | None, default None
+            Checked like in _validation_batch_plotters (2 or higher)
+        ncols : int | None, default None
+            Checked like in _validation_batch_plotters (at least 1)
+
+    Returns
+    ---
+        list
+            Column names present in both DataFrames, in data1's order.
+            Never empty
+
+    Raises
+    ---
+        ValueError
+            If data1 or data2 is empty, max_categories is less than 2,
+            ncols is less than 1, either DataFrame has duplicate column
+            names, or they share no column
+    """
+    _validation_batch_plotters(
+        data=data1,
+        max_categories=max_categories,
+        ncols=ncols
+    )
+    _validation_batch_plotters(
+        data=data2
+    )
+    return _get_common_columns(data1, data2)
+
 # Util
 
 def _get_number_of_rows(
@@ -136,7 +179,6 @@ def _get_number_of_rows(
     """
     _validate_ncols(ncols)
     return int(np.ceil(amount_of_plots / ncols))
-
 
 
 def _sort_labels_alphabetically(
@@ -217,15 +259,20 @@ def _group_overflow_and_sort(
         values : pd.Series,
         sort_alphabetically : bool,
         max_categories : int,
-        other_label : str
+        other_label : str,
+        na_label : str
     ) -> tuple[tuple, tuple]:
-    """Groups the overflowing categories into other_label and, optionally,
-    sorts the result alphabetically.
+    """Prepares per-category values for plotting.
+
+    Replaces a missing category label with na_label, orders the categories
+    by descending value, groups the overflowing ones into other_label and,
+    optionally, sorts the result alphabetically. Ties keep their original
+    order.
 
     Parameters
     ---
         values : pd.Series
-            Counts or sums indexed by label, sorted in descending order
+            Counts or sums indexed by label, in any order
         sort_alphabetically : bool
             If True, labels are sorted alphabetically.
             The aggregated entry is always placed last
@@ -234,6 +281,8 @@ def _group_overflow_and_sort(
             Must be at least 2
         other_label : str
             Label for the aggregated entry
+        na_label : str
+            Label that replaces a missing category
 
     Returns
     ---
@@ -246,6 +295,8 @@ def _group_overflow_and_sort(
         ValueError
             If max_categories is less than 2
     """
+    values = values.set_axis(values.index.astype(object).fillna(na_label))
+    values = values.sort_values(ascending=False, kind='stable')
     values = _group_overflow(values, max_categories, other_label)
 
     if not sort_alphabetically:
@@ -365,65 +416,6 @@ def _hide_unused_axes(
 
 # Data
 
-def _plot_grid(
-        items : Iterable,
-        draw : Callable[[Axes, Any], None],
-        ncols : int,
-        figsize : tuple,
-        fig_title : str = '',
-        suptitle_kwargs : dict | None = None
-    ) -> tuple[Figure, np.ndarray]:
-    """Creates a grid with one subplot per item and draws each item on its own Axes.
-
-    Shared skeleton of the plotting functions: it creates the figure, calls
-    draw once per item (in order, filling the grid row by row), hides the
-    leftover subplots and sets the figure title. Callers validate their
-    arguments before calling it, so no figure is created for invalid input.
-
-    Parameters
-    ---
-        items : Iterable
-            One entry per subplot. Consumed once, and must not be empty
-        draw : Callable[[Axes, Any], None]
-            Called as draw(ax, item) to draw one item on its subplot.
-            It usually is a closure over the caller's arguments
-        ncols : int
-            Number of subplot columns.
-            Must be at least 1
-        figsize : tuple
-            Figure size in inches, as (width, height)
-        fig_title : str, default ''
-            Title for the whole figure
-        suptitle_kwargs : dict | None, default None
-            Style overrides for the figure title (see fig_suptitle_format)
-
-    Returns
-    ---
-        fig : matplotlib.figure.Figure
-        axs : np.ndarray
-            2D array of Axes with shape (nrows, ncols)
-
-    Raises
-    ---
-        ValueError
-            If ncols is less than 1
-    """
-    items = list(items)
-
-    fig, axs = create_fig(
-        nplots=len(items),
-        ncols=ncols,
-        figsize=figsize
-    )
-
-    for ax, item in zip(axs.flatten(), items):
-        draw(ax, item)
-
-    _hide_unused_axes(axs, len(items))
-
-    fig_suptitle_format(fig, fig_title, suptitle_kwargs)
-    return fig, axs
-
 def _get_common_columns(
         data1 : pd.DataFrame,
         data2 : pd.DataFrame
@@ -458,6 +450,157 @@ def _get_common_columns(
     if not common_cols:
         raise ValueError('data1 and data2 have no columns in common')
     return common_cols
+
+def _titled_series(
+        data : pd.DataFrame,
+        title_prefix : str
+    ) -> list[tuple[pd.Series, str]]:
+    """Pairs each column of data with the title of its subplot.
+
+    Parameters
+    ---
+        data : pd.DataFrame
+        title_prefix : str
+            Text concatenated before the column name in each title
+
+    Returns
+    ---
+        list[tuple[pd.Series, str]]
+            One (column, title) pair per column of data, in order.
+            Columns are taken by position, so duplicated column names
+            still yield one Series each
+    """
+    return [(series, f'{title_prefix}{col}') for col, series in data.items()]
+
+def _paired_series(
+        common_cols : list,
+        data1 : pd.DataFrame,
+        data2 : pd.DataFrame,
+        data1_label : str,
+        data2_label : str,
+        title_prefix : str
+    ) -> list[tuple[pd.Series, str]]:
+    """Alternates the two samples for each shared column, with subplot titles.
+
+    Parameters
+    ---
+        common_cols : list
+            Columns present in both DataFrames (see _get_common_columns)
+        data1 : pd.DataFrame
+        data2 : pd.DataFrame
+        data1_label : str
+            Name of the first sample, appended to its titles
+        data2_label : str
+            Name of the second sample, appended to its titles
+        title_prefix : str
+            Text concatenated before the column name in each title
+
+    Returns
+    ---
+        list[tuple[pd.Series, str]]
+            (column, title) pairs: for each column of common_cols, the
+            data1 column followed by the data2 column. Titles follow the
+            format '{title_prefix}{column} - {label}'
+    """
+    return [
+        (data[col], f'{title_prefix}{col} - {label}')
+        for col in common_cols
+        for data, label in ((data1, data1_label), (data2, data2_label))
+    ]
+
+def _value_counts_panels(
+        titled_series : list[tuple[pd.Series, str]],
+        sort_alphabetically : bool = False,
+        max_categories : int = 5,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado'
+    ) -> list[tuple[tuple, tuple, str]]:
+    """Computes the (labels, counts, title) panel of each series.
+
+    Parameters
+    ---
+        titled_series : list[tuple[pd.Series, str]]
+            (series, title) pairs, as built by _titled_series
+        sort_alphabetically, max_categories, other_label, dropna, na_label
+            See _get_value_counts_and_sort_labels
+
+    Returns
+    ---
+        list[tuple[tuple, tuple, str]]
+            One (labels, counts, title) panel per series, in order
+
+    Raises
+    ---
+        ValueError
+            If max_categories is less than 2
+    """
+    return [
+        (
+            *_get_value_counts_and_sort_labels(
+                series,
+                sort_alphabetically=sort_alphabetically,
+                max_categories=max_categories,
+                other_label=other_label,
+                dropna=dropna,
+                na_label=na_label
+            ),
+            title
+        )
+        for series, title in titled_series
+    ]
+
+def _group_sum_panels(
+        data : pd.DataFrame,
+        target_col : Hashable,
+        title_prefix : str,
+        sort_alphabetically : bool = False,
+        max_categories : int = 5,
+        other_label : str = 'Outros',
+        dropna : bool = False,
+        na_label : str = 'Sem dado'
+    ) -> list[tuple[tuple, tuple, str]]:
+    """Computes the (labels, sums, title) panel of every column except target_col.
+
+    Parameters
+    ---
+        data : pd.DataFrame
+            Must contain target_col (see _validation_batch_groupers)
+        target_col : Hashable
+            Numeric column that is summed per category of each other column
+        title_prefix : str
+            Text concatenated before the column name in each title
+        sort_alphabetically, max_categories, other_label, dropna, na_label
+            See _get_group_by_and_sort_labels
+
+    Returns
+    ---
+        list[tuple[tuple, tuple, str]]
+            One (labels, sums, title) panel per grouping column, in order
+
+    Raises
+    ---
+        ValueError
+            If max_categories is less than 2
+    """
+    group_cols : list = [col for col in data.columns if col != target_col]
+
+    return [
+        (
+            *_get_group_by_and_sort_labels(
+                data[[col, target_col]],
+                group_by=col,
+                target_col=target_col,
+                sort_alphabetically=sort_alphabetically,
+                max_categories=max_categories,
+                other_label=other_label,
+                dropna=dropna,
+                na_label=na_label
+            ),
+            f'{title_prefix}{col}'
+        )
+        for col in group_cols
+    ]
 
 def _get_value_counts_and_sort_labels(
         series : pd.Series,
@@ -504,18 +647,15 @@ def _get_value_counts_and_sort_labels(
         ValueError
             If max_categories is less than 2
     """
-    _validate_max_categories(max_categories)
-
     value_counts_series : pd.Series = series.value_counts(dropna=dropna)
     value_counts_series = value_counts_series[value_counts_series > 0] # ignores unobserved categories
-
-    value_counts_series.index = value_counts_series.index.astype(object).fillna(na_label)
 
     return _group_overflow_and_sort(
         value_counts_series,
         sort_alphabetically,
         max_categories,
-        other_label
+        other_label,
+        na_label
     )
 
 def _get_group_by_and_sort_labels(
@@ -570,22 +710,18 @@ def _get_group_by_and_sort_labels(
         ValueError
             If max_categories is less than 2
     """
-    _validate_max_categories(max_categories)
-
     values_series : pd.Series = data[target_col].groupby(
         data[group_by],
         dropna=dropna,
         observed=True
     ).sum()
 
-    values_series.index = values_series.index.astype(object).fillna(na_label) # replaces NA label with na_label
-    values_series = values_series.sort_values(ascending=False, kind='stable')
-
     return _group_overflow_and_sort(
         values_series,
         sort_alphabetically,
         max_categories,
-        other_label
+        other_label,
+        na_label
     )
 
 # Draw
@@ -892,6 +1028,57 @@ def _draw_boxplot(
 
     _title_format(ax, title, title_kwargs)
 
+def _draw_legend(
+        ax : Axes,
+        legend_kwargs : dict | None = None
+    ) -> None:
+    """Draws a legend on ax, in the lower right corner by default.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        legend_kwargs : dict | None, default None
+            Overrides for the Axes.legend arguments. The default is
+            loc='lower right'
+    """
+    legend_kwargs_all : dict = {
+        'loc':'lower right',
+        **(legend_kwargs or {})
+    }
+    ax.legend(**legend_kwargs_all)
+
+def _annotate_axes(
+        ax : Axes,
+        title : str,
+        xlabel : str,
+        ylabel : str,
+        label : str | None = None,
+        title_kwargs : dict | None = None,
+        legend_kwargs : dict | None = None
+    ) -> None:
+    """Sets the title, legend and axis labels of an x-y plot on ax.
+
+    Parameters
+    ---
+        ax : matplotlib.axes.Axes
+        title : str
+        xlabel : str
+        ylabel : str
+        label : str | None, default None
+            The legend is only drawn if this is not None
+        title_kwargs : dict | None, default None
+            Style overrides for the title (see _title_format)
+        legend_kwargs : dict | None, default None
+            Overrides for the Axes.legend arguments (see _draw_legend)
+    """
+    _title_format(ax, title, title_kwargs)
+
+    if label is not None:
+        _draw_legend(ax, legend_kwargs)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
 def _draw_lineplot(
         ax : Axes,
         x : pd.Series | np.ndarray,
@@ -942,25 +1129,15 @@ def _draw_lineplot(
         'lw': 0.75,
         'alpha':1,
         **(line_kwargs or {})
-        }
-    
+    }
+
     ax.plot(
         x,
         y,
         **line_kwargs_all
     )
 
-    _title_format(ax, title, title_kwargs)
-
-    if label is not None:
-        legend_kwargs_all : dict = {
-            'loc':'lower right',
-            **(legend_kwargs or {})
-            }
-        ax.legend(**legend_kwargs_all)
-
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    _annotate_axes(ax, title, xlabel, ylabel, label, title_kwargs, legend_kwargs)
 
 def draw_scatter(
         ax : Axes,
@@ -1017,17 +1194,7 @@ def draw_scatter(
     }
     ax.scatter(**scatter_kwargs_all)
 
-    _title_format(ax, title, title_kwargs)
-
-    if label is not None:
-        legend_kwargs_all : dict = {
-            'loc':'lower right',
-            **(legend_kwargs or {})
-            }
-        ax.legend(**legend_kwargs_all)
-
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    _annotate_axes(ax, title, xlabel, ylabel, label, title_kwargs, legend_kwargs)
 
 def draw_line(
         ax : Axes,
@@ -1087,13 +1254,245 @@ def draw_line(
         case 'v':
             ax.axvline(**{'x':coord, **axline_kwargs_all})
 
-    if show_label:
-        if label is not None:
-            legend_kwargs_all : dict = {
-                'loc':'lower right',
-                **(legend_kwargs or {})
-                }
-            ax.legend(**legend_kwargs_all)
+    if show_label and label is not None:
+        _draw_legend(ax, legend_kwargs)
+
+# Grid
+
+def _plot_grid(
+        items : Iterable,
+        draw : Callable[[Axes, Any], None],
+        ncols : int,
+        figsize : tuple,
+        fig_title : str = '',
+        suptitle_kwargs : dict | None = None
+    ) -> tuple[Figure, np.ndarray]:
+    """Creates a grid with one subplot per item and draws each item on its own Axes.
+
+    Shared skeleton of the plotting functions: it creates the figure, calls
+    draw once per item (in order, filling the grid row by row), hides the
+    leftover subplots and sets the figure title. Callers validate their
+    arguments before calling it, so no figure is created for invalid input.
+
+    Parameters
+    ---
+        items : Iterable
+            One entry per subplot. Consumed once, and must not be empty
+        draw : Callable[[Axes, Any], None]
+            Called as draw(ax, item) to draw one item on its subplot.
+            It usually is a closure over the caller's arguments
+        ncols : int
+            Number of subplot columns.
+            Must be at least 1
+        figsize : tuple
+            Figure size in inches, as (width, height)
+        fig_title : str, default ''
+            Title for the whole figure
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols)
+
+    Raises
+    ---
+        ValueError
+            If ncols is less than 1
+    """
+    items = list(items)
+
+    fig, axs = create_fig(
+        nplots=len(items),
+        ncols=ncols,
+        figsize=figsize
+    )
+
+    for ax, item in zip(axs.flatten(), items):
+        draw(ax, item)
+
+    _hide_unused_axes(axs, len(items))
+
+    fig_suptitle_format(fig, fig_title, suptitle_kwargs)
+    return fig, axs
+
+def _plot_category_grid(
+        panels : list[tuple[tuple, tuple, str]],
+        chart : str,
+        ncols : int,
+        figsize : tuple,
+        fig_title : str = '',
+        color_dict : dict | None = None,
+        generic_colors : list | None = None,
+        xlabel : str = '',
+        chart_kwargs : dict | None = None,
+        title_kwargs : dict | None = None,
+        suptitle_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
+    ) -> tuple[Figure, np.ndarray]:
+    """Plots one category chart (pie or horizontal bars) per panel, on a grid.
+
+    Shared by every plotting function that draws labeled values, so pie
+    and bar variants differ only in the chart argument.
+
+    Parameters
+    ---
+        panels : list[tuple[tuple, tuple, str]]
+            One (labels, values, title) entry per subplot, as built by
+            _value_counts_panels or _group_sum_panels. Must not be empty
+        chart : str
+            'pie' or 'barh'
+        ncols : int
+            Number of subplot columns.
+            Must be at least 1
+        figsize : tuple
+            Figure size in inches, as (width, height)
+        fig_title : str, default ''
+            Title for the whole figure
+        color_dict : dict | None, default None
+            label:color dictionary. Unmapped labels use generic_colors cycle
+        generic_colors : list | None, default None
+            Fallback color cycle. If None, the default matplotlib color
+            cycle will be used. Pass [color] for a single color
+        xlabel : str, default ''
+            Label for the length axis. Only used by 'barh'
+        chart_kwargs : dict | None, default None
+            Overrides for the Axes.pie or Axes.barh arguments, depending on chart
+        title_kwargs : dict | None, default None
+            Style overrides for each subplot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup for every subplot
+            (kwargs_major, kwargs_minor, facecolor)
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols).
+            Unused subplots are hidden
+
+    Raises
+    ---
+        ValueError
+            If chart is not 'pie' or 'barh', or ncols is less than 1
+    """
+    if chart not in ('pie', 'barh'):
+        raise ValueError(f"chart must be 'pie' or 'barh', got {chart!r}")
+
+    if generic_colors is None:
+        generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+    def draw(ax : Axes, panel : tuple) -> None:
+        labels, values, title = panel
+        colors : list = _sort_colors(color_dict, labels, generic_colors)
+
+        if chart == 'pie':
+            _draw_pie(
+                ax=ax,
+                x=values,
+                labels=labels,
+                colors=colors,
+                title=title,
+                pie_kwargs=chart_kwargs,
+                title_kwargs=title_kwargs,
+                setup_kwargs=setup_kwargs
+            )
+        else:
+            _draw_barh(
+                ax=ax,
+                labels=labels,
+                width=values,
+                colors=colors,
+                title=title,
+                xlabel=xlabel,
+                barh_kwargs=chart_kwargs,
+                title_kwargs=title_kwargs,
+                setup_kwargs=setup_kwargs
+            )
+
+    return _plot_grid(
+        items=panels,
+        draw=draw,
+        ncols=ncols,
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
+    )
+
+def _plot_hist_grid(
+        panels : list[tuple[pd.Series, str]],
+        color : str,
+        ncols : int,
+        figsize : tuple,
+        fig_title : str = '',
+        hist_kwargs : dict | None = None,
+        title_kwargs : dict | None = None,
+        suptitle_kwargs : dict | None = None,
+        setup_kwargs : dict | None = None
+    ) -> tuple[Figure, np.ndarray]:
+    """Plots one histogram per panel, on a grid.
+
+    Parameters
+    ---
+        panels : list[tuple[pd.Series, str]]
+            One (series, title) entry per subplot, as built by
+            _titled_series or _paired_series. Must not be empty
+        color : str
+            Bar color of every histogram
+        ncols : int
+            Number of subplot columns.
+            Must be at least 1
+        figsize : tuple
+            Figure size in inches, as (width, height)
+        fig_title : str, default ''
+            Title for the whole figure
+        hist_kwargs : dict | None, default None
+            Overrides for the Axes.hist arguments of every histogram (e.g.
+            bins, alpha)
+        title_kwargs : dict | None, default None
+            Style overrides for each subplot title (see _title_format)
+        suptitle_kwargs : dict | None, default None
+            Style overrides for the figure title (see fig_suptitle_format)
+        setup_kwargs : dict | None, default None
+            Keyword arguments forwarded to _visual_setup for every subplot
+            (kwargs_major, kwargs_minor, facecolor)
+
+    Returns
+    ---
+        fig : matplotlib.figure.Figure
+        axs : np.ndarray
+            2D array of Axes with shape (nrows, ncols).
+            Unused subplots are hidden
+
+    Raises
+    ---
+        ValueError
+            If ncols is less than 1
+    """
+    def draw(ax : Axes, panel : tuple) -> None:
+        series, title = panel
+        _draw_hist(
+            ax=ax,
+            x=series,
+            color=color,
+            title=title,
+            hist_kwargs=hist_kwargs,
+            title_kwargs=title_kwargs,
+            setup_kwargs=setup_kwargs
+        )
+
+    return _plot_grid(
+        items=panels,
+        draw=draw,
+        ncols=ncols,
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
+    )
 
 ### Public methods
 
@@ -1174,7 +1573,7 @@ def plot_line_chart(
             Figure size in inches, as (width, height).
             Only used when ax is None
         title : str, default ''
-            Title of the plot. If empty, '{xlabel} por {ylabel}' is used
+            Title of the plot. If empty, '{ylabel} por {xlabel}' is used
         line_kwargs : dict | None, default None
             Overrides for the Axes.plot arguments (see _draw_lineplot)
         title_kwargs : dict | None, default None
@@ -1195,40 +1594,38 @@ def plot_line_chart(
         tuple[matplotlib.figure.Figure, np.ndarray]
             (fig, axs), if ax was None. axs is a 2D array holding a single Axes
     """
-
     if title == '':
         title = f'{ylabel} por {xlabel}'
 
-    fig : Figure | None = None
-    axs : np.ndarray | None = None
-
-    if ax is None:
-        fig, axs = create_fig(
-            1,
-            1,
-            figsize
+    def draw(ax : Axes, _ : None) -> None:
+        _draw_lineplot(
+            ax=ax,
+            x=x,
+            y=y,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            label=label,
+            title=title,
+            color=color,
+            line_kwargs=line_kwargs,
+            title_kwargs=title_kwargs,
+            legend_kwargs=legend_kwargs,
+            setup_kwargs=setup_kwargs
         )
-        ax = axs[0, 0]
-    _draw_lineplot(
-        ax=ax,
-        x=x,
-        y=y,
-        xlabel=xlabel,
-        ylabel=ylabel,
-        label=label,
-        title=title,
-        color=color,
-        line_kwargs=line_kwargs,
-        title_kwargs=title_kwargs,
-        legend_kwargs=legend_kwargs,
-        setup_kwargs=setup_kwargs
-    )
 
-    if fig is None:
+    if ax is not None:
+        draw(ax, None)
         return ax
 
-    fig_suptitle_format(fig, fig_title, suptitle_kwargs)
-    return fig, axs
+    # a figure with a single subplot, built like the other plot_* functions
+    return _plot_grid(
+        items=[None],
+        draw=draw,
+        ncols=1,
+        figsize=figsize,
+        fig_title=fig_title,
+        suptitle_kwargs=suptitle_kwargs
+    )
 
 ### VALUE COUNTS
 
@@ -1314,41 +1711,27 @@ def plot_value_counts_pie(
         ncols=ncols
     )
 
-    if generic_colors is None:
-        generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    panels : list = _value_counts_panels(
+        _titled_series(data, title_prefix),
+        sort_alphabetically=sort_alphabetically,
+        max_categories=max_categories,
+        other_label=other_label,
+        dropna=dropna,
+        na_label=na_label
+    )
 
-    def draw(ax : Axes, item : tuple) -> None:
-        col, series = item
-        value_labels, value_counts = _get_value_counts_and_sort_labels(
-            series,
-            sort_alphabetically=sort_alphabetically,
-            max_categories=max_categories,
-            other_label=other_label,
-            dropna=dropna,
-            na_label=na_label
-        )
-
-        ordered_colors : list = _sort_colors(color_dict, value_labels, generic_colors)
-
-        _draw_pie(
-            ax=ax,
-            x=value_counts,
-            labels=value_labels,
-            colors=ordered_colors,
-            title=f'{title_prefix}{col}',
-            pie_kwargs=pie_kwargs,
-            title_kwargs=title_kwargs,
-            setup_kwargs=setup_kwargs
-        )
-
-    # items() yields one Series per column, even if column names are duplicated
-    return _plot_grid(
-        items=data.items(),
-        draw=draw,
+    return _plot_category_grid(
+        panels=panels,
+        chart='pie',
         ncols=ncols,
         figsize=figsize,
         fig_title=fig_title,
-        suptitle_kwargs=suptitle_kwargs
+        color_dict=color_dict,
+        generic_colors=generic_colors,
+        chart_kwargs=pie_kwargs,
+        title_kwargs=title_kwargs,
+        suptitle_kwargs=suptitle_kwargs,
+        setup_kwargs=setup_kwargs
     )
 
 
@@ -1441,39 +1824,28 @@ def plot_value_counts(
         ncols=ncols
     )
 
-    def draw(ax : Axes, item : tuple) -> None:
-        col, series = item
-        value_labels, value_counts = _get_value_counts_and_sort_labels(
-            series,
-            sort_alphabetically=sort_alphabetically,
-            max_categories=max_categories,
-            other_label=other_label,
-            dropna=dropna,
-            na_label=na_label
-        )
+    panels : list = _value_counts_panels(
+        _titled_series(data, title_prefix),
+        sort_alphabetically=sort_alphabetically,
+        max_categories=max_categories,
+        other_label=other_label,
+        dropna=dropna,
+        na_label=na_label
+    )
 
-        ordered_colors : list = _sort_colors(color_dict, value_labels, [generic_color])
-
-        _draw_barh(
-            ax=ax,
-            labels=value_labels,
-            width=value_counts,
-            colors=ordered_colors,
-            title=f'{title_prefix}{col}',
-            xlabel=xlabel,
-            barh_kwargs=barh_kwargs,
-            title_kwargs=title_kwargs,
-            setup_kwargs=setup_kwargs
-        )
-
-    # items() yields one Series per column, even if column names are duplicated
-    return _plot_grid(
-        items=data.items(),
-        draw=draw,
+    return _plot_category_grid(
+        panels=panels,
+        chart='barh',
         ncols=ncols,
         figsize=figsize,
         fig_title=fig_title,
-        suptitle_kwargs=suptitle_kwargs
+        color_dict=color_dict,
+        generic_colors=[generic_color],
+        xlabel=xlabel,
+        chart_kwargs=barh_kwargs,
+        title_kwargs=title_kwargs,
+        suptitle_kwargs=suptitle_kwargs,
+        setup_kwargs=setup_kwargs
     )
 
 
@@ -1537,25 +1909,18 @@ def plot_hist(
         ncols=ncols
     )
 
-    def draw(ax : Axes, item : tuple) -> None:
-        col, series = item
-        _draw_hist(
-            ax=ax,
-            x=series,
-            color=color,
-            title=f'{title_prefix}{col}',
-            hist_kwargs=hist_kwargs,
-            title_kwargs=title_kwargs,
-            setup_kwargs=setup_kwargs
-        )
+    panels : list = _titled_series(data, title_prefix)
 
-    return _plot_grid(
-        items=data.items(),
-        draw=draw,
+    return _plot_hist_grid(
+        panels=panels,
+        color=color,
         ncols=ncols,
         figsize=figsize,
         fig_title=fig_title,
-        suptitle_kwargs=suptitle_kwargs
+        hist_kwargs=hist_kwargs,
+        title_kwargs=title_kwargs,
+        suptitle_kwargs=suptitle_kwargs,
+        setup_kwargs=setup_kwargs
     )
 
 
@@ -1566,8 +1931,8 @@ def plot_alternating_hist(
         data2_label : str = 'Sample 2',
         fig_title : str = '',
         figsize : tuple = (16, 6),
-        ncols : int = 3,
-        title_prefix : str = 'Distribuição por ',
+        ncols : int = 2,
+        title_prefix : str = 'Distribuição de clientes por ',
         color : str = 'blue',
         title_kwargs : dict | None = None,
         suptitle_kwargs : dict | None = None,
@@ -1598,11 +1963,11 @@ def plot_alternating_hist(
             Title for the whole figure
         figsize : tuple, default (16, 6)
             Figure size in inches, as (width, height)
-        ncols : int, default 3
+        ncols : int, default 2
             Number of subplot columns. Must be at least 1.
             Two subplots are used per column, so an even value
             keeps each pair on the same row
-        title_prefix : str, default 'Distribuição por '
+        title_prefix : str, default 'Distribuição de clientes por '
             Text concatenated before the column name in each subplot title
             Titles follow the format '{title_prefix}{column} - {label}'
         color : str, default 'blue'
@@ -1632,41 +1997,31 @@ def plot_alternating_hist(
             If data1 or data2 is empty, ncols is less than 1, either
             DataFrame has duplicate column names, or they share no column
     """
-    _validation_batch_plotters(
-        data=data1,
+    common_cols : list = _validation_batch_comparers(
+        data1,
+        data2,
         ncols=ncols
     )
-    _validation_batch_plotters(
-        data=data2
+
+    panels : list = _paired_series(
+        common_cols,
+        data1,
+        data2,
+        data1_label,
+        data2_label,
+        title_prefix
     )
-    common_cols : list = _get_common_columns(data1, data2)
 
-    # (series, title) pairs: data1 then data2 for each shared column
-    panels : list = [
-        (data[col], f'{title_prefix}{col} - {label}')
-        for col in common_cols
-        for data, label in ((data1, data1_label), (data2, data2_label))
-    ]
-
-    def draw(ax : Axes, panel : tuple) -> None:
-        series, title = panel
-        _draw_hist(
-            ax=ax,
-            x=series,
-            color=color,
-            title=title,
-            hist_kwargs=hist_kwargs,
-            title_kwargs=title_kwargs,
-            setup_kwargs=setup_kwargs
-        )
-
-    return _plot_grid(
-        items=panels,
-        draw=draw,
+    return _plot_hist_grid(
+        panels=panels,
+        color=color,
         ncols=ncols,
         figsize=figsize,
         fig_title=fig_title,
-        suptitle_kwargs=suptitle_kwargs
+        hist_kwargs=hist_kwargs,
+        title_kwargs=title_kwargs,
+        suptitle_kwargs=suptitle_kwargs,
+        setup_kwargs=setup_kwargs
     )
 
 
@@ -1771,43 +2126,29 @@ def plot_group_variable_sum_into_pie(
         target_col=target_col
     )
 
-    group_cols : list = [col for col in data.columns if col != target_col]
+    panels : list = _group_sum_panels(
+        data,
+        target_col,
+        title_prefix,
+        sort_alphabetically=sort_alphabetically,
+        max_categories=max_categories,
+        other_label=other_label,
+        dropna=dropna,
+        na_label=na_label
+    )
 
-    if generic_colors is None:
-        generic_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-
-    def draw(ax : Axes, col : Hashable) -> None:
-        value_labels, value_sums = _get_group_by_and_sort_labels(
-            data[[col, target_col]],
-            group_by=col,
-            target_col=target_col,
-            sort_alphabetically=sort_alphabetically,
-            max_categories=max_categories,
-            other_label=other_label,
-            dropna=dropna,
-            na_label=na_label
-        )
-
-        ordered_colors : list = _sort_colors(color_dict, value_labels, generic_colors)
-
-        _draw_pie(
-            ax=ax,
-            x=value_sums,
-            labels=value_labels,
-            colors=ordered_colors,
-            title=f'{title_prefix}{col}',
-            pie_kwargs=pie_kwargs,
-            title_kwargs=title_kwargs,
-            setup_kwargs=setup_kwargs
-        )
-
-    return _plot_grid(
-        items=group_cols,
-        draw=draw,
+    return _plot_category_grid(
+        panels=panels,
+        chart='pie',
         ncols=ncols,
         figsize=figsize,
         fig_title=fig_title,
-        suptitle_kwargs=suptitle_kwargs
+        color_dict=color_dict,
+        generic_colors=generic_colors,
+        chart_kwargs=pie_kwargs,
+        title_kwargs=title_kwargs,
+        suptitle_kwargs=suptitle_kwargs,
+        setup_kwargs=setup_kwargs
     )
 
 
@@ -1914,41 +2255,30 @@ def plot_group_variable_sum_into_barh(
         target_col=target_col
     )
 
-    group_cols : list = [col for col in data.columns if col != target_col]
+    panels : list = _group_sum_panels(
+        data,
+        target_col,
+        title_prefix,
+        sort_alphabetically=sort_alphabetically,
+        max_categories=max_categories,
+        other_label=other_label,
+        dropna=dropna,
+        na_label=na_label
+    )
 
-    def draw(ax : Axes, col : Hashable) -> None:
-        value_labels, value_sums = _get_group_by_and_sort_labels(
-            data[[col, target_col]],
-            group_by=col,
-            target_col=target_col,
-            sort_alphabetically=sort_alphabetically,
-            max_categories=max_categories,
-            other_label=other_label,
-            dropna=dropna,
-            na_label=na_label
-        )
-
-        ordered_colors : list = _sort_colors(color_dict, value_labels, [generic_color])
-
-        _draw_barh(
-            ax=ax,
-            labels=value_labels,
-            width=value_sums,
-            colors=ordered_colors,
-            title=f'{title_prefix}{col}',
-            xlabel=xlabel,
-            barh_kwargs=barh_kwargs,
-            title_kwargs=title_kwargs,
-            setup_kwargs=setup_kwargs
-        )
-
-    return _plot_grid(
-        items=group_cols,
-        draw=draw,
+    return _plot_category_grid(
+        panels=panels,
+        chart='barh',
         ncols=ncols,
         figsize=figsize,
         fig_title=fig_title,
-        suptitle_kwargs=suptitle_kwargs
+        color_dict=color_dict,
+        generic_colors=[generic_color],
+        xlabel=xlabel,
+        chart_kwargs=barh_kwargs,
+        title_kwargs=title_kwargs,
+        suptitle_kwargs=suptitle_kwargs,
+        setup_kwargs=setup_kwargs
     )
 
 
@@ -2055,55 +2385,42 @@ def plot_alternating_value_counts_barh(
             ncols is less than 1, either DataFrame has duplicate column
             names, or they share no column
     """
-    _validation_batch_plotters(
-        data=data1,
+    common_cols : list = _validation_batch_comparers(
+        data1,
+        data2,
         max_categories=max_categories,
         ncols=ncols
     )
-    _validation_batch_plotters(
-        data=data2
+
+    panels : list = _value_counts_panels(
+        _paired_series(
+            common_cols,
+            data1,
+            data2,
+            data1_label,
+            data2_label,
+            title_prefix
+        ),
+        sort_alphabetically=sort_alphabetically,
+        max_categories=max_categories,
+        other_label=other_label,
+        dropna=dropna,
+        na_label=na_label
     )
-    common_cols : list = _get_common_columns(data1, data2)
 
-    # (series, title) pairs: data1 then data2 for each shared column
-    panels : list = [
-        (data[col], f'{title_prefix}{col} - {label}')
-        for col in common_cols
-        for data, label in ((data1, data1_label), (data2, data2_label))
-    ]
-
-    def draw(ax : Axes, panel : tuple) -> None:
-        series, title = panel
-        value_labels, value_counts = _get_value_counts_and_sort_labels(
-            series,
-            sort_alphabetically=sort_alphabetically,
-            max_categories=max_categories,
-            other_label=other_label,
-            dropna=dropna,
-            na_label=na_label
-        )
-
-        ordered_colors : list = _sort_colors(color_dict, value_labels, [generic_color])
-
-        _draw_barh(
-            ax=ax,
-            labels=value_labels,
-            width=value_counts,
-            colors=ordered_colors,
-            title=title,
-            xlabel=xlabel,
-            barh_kwargs=barh_kwargs,
-            title_kwargs=title_kwargs,
-            setup_kwargs=setup_kwargs
-        )
-
-    return _plot_grid(
-        items=panels,
-        draw=draw,
+    return _plot_category_grid(
+        panels=panels,
+        chart='barh',
         ncols=ncols,
         figsize=figsize,
         fig_title=fig_title,
-        suptitle_kwargs=suptitle_kwargs
+        color_dict=color_dict,
+        generic_colors=[generic_color],
+        xlabel=xlabel,
+        chart_kwargs=barh_kwargs,
+        title_kwargs=title_kwargs,
+        suptitle_kwargs=suptitle_kwargs,
+        setup_kwargs=setup_kwargs
     )
 
 
@@ -2151,6 +2468,8 @@ def plot_comparing_box(
             Row amount is calculated based on ncols
         title_prefix : str, default 'Clientes por '
             Text concatenated before the column name in each subplot title
+        max_categories : int, default 10
+            Not used. Accepted only so existing calls keep working
         title_kwargs : dict | None, default None
             Style overrides for each subplot title (see _title_format)
         suptitle_kwargs : dict | None, default None
@@ -2176,14 +2495,11 @@ def plot_comparing_box(
             If data1 or data2 is empty, ncols is less than 1, either
             DataFrame has duplicate column names, or they share no column
     """
-    _validation_batch_plotters(
-        data=data1,
+    common_cols : list = _validation_batch_comparers(
+        data1,
+        data2,
         ncols=ncols
     )
-    _validation_batch_plotters(
-        data=data2
-    )
-    common_cols : list = _get_common_columns(data1, data2)
 
     def draw(ax : Axes, col : Hashable) -> None:
         for series, label, position in (
