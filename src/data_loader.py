@@ -1,10 +1,10 @@
 # src/data_loader.py
 import pandas as pd
 from pathlib import Path
-import utils
+from utils import path_from_root, create_path_from_root, format_column_name
 
 def load_churn_data(
-        filepath : Path | str
+    filepath : Path | str
 ) -> pd.DataFrame:
     """
     Loads churn data
@@ -29,7 +29,7 @@ def load_churn_data(
             File type is not supported
     """
 
-    path_full : Path = utils.path_from_root(filepath)
+    path_full : Path = path_from_root(filepath)
 
     if not path_full.exists():
         raise FileNotFoundError(f"File not found: {filepath}")
@@ -76,10 +76,11 @@ def export_churn_data(
         TypeError
             Attempted to save to an unsupported file type
         """
-    path_full : Path = utils.path_from_root(filepath)
-
+    path_full : Path = path_from_root(filepath)
     if path_full.exists() and not override:
         raise FileExistsError(f'File already exists, use override = True to save over it')
+    elif not path_full.exists():
+        create_path_from_root(filepath)
     
     ext : str = path_full.suffix
 
@@ -99,7 +100,7 @@ def format_column_names(cols : list[str] | pd.Index) -> list[str]:
     """Returns a list with the renamed columns in order"""
     new_cols : list[str] = []
     for col in cols:
-        new_col : str = utils.format_column_name(col)
+        new_col : str = format_column_name(col)
         new_cols += [new_col]
 
     return new_cols

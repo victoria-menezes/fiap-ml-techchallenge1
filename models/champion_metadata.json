@@ -1,0 +1,70 @@
+{
+  "model_name": "rfc",
+  "model_file": "champion.joblib",
+  "created_at": "2026-11-21",
+  "seed": 4586,
+  "versions": {
+    "python": "3.12.7",
+    "scikit-learn": "1.9.1"
+  },
+  "dataset": {
+    "n_train": 5282,
+    "n_test": 1761,
+    "churn_rate_test": 0.26519023282226006
+  },
+  "input_features": [
+    "Tenure Months",
+    "Monthly Charges",
+    "Internet Service",
+    "Contract",
+    "Payment Method",
+    "Partner",
+    "Dependents",
+    "Paperless Billing",
+    "Online Security",
+    "Online Backup",
+    "Device Protection",
+    "Tech Support"
+  ],
+  "model_features": [
+    "payment_method_bank_transfer_automatic",
+    "payment_method_credit_card_automatic",
+    "payment_method_electronic_check",
+    "payment_method_mailed_check",
+    "internet_service_dsl",
+    "internet_service_fiber_optic",
+    "internet_service_no",
+    "contract_monthtomonth",
+    "contract_one_year",
+    "contract_two_year",
+    "online_security",
+    "online_backup",
+    "device_protection",
+    "tech_support",
+    "paperless_billing",
+    "partner",
+    "dependents",
+    "tenure_months",
+    "monthly_charges"
+  ],
+  "threshold": 0.4900254162550497,
+  "threshold_rule": "highest threshold with recall >= 0.8 on out-of-fold train predictions",
+  "metrics": {
+    "cv_average_precision_mean": 0.6867361914868371,
+    "cv_average_precision_std": 0.023228343524650683,
+    "oof_recall": 0.8002853067047075,
+    "oof_precision": 0.5335235378031383,
+    "test_recall": 0.8244111349036403,
+    "test_precision": 0.5422535211267606,
+    "test_average_precision": 0.6614088594625617
+  },
+  "best_params": {
+    "model__random_state": 4586,
+    "model__n_estimators": 100,
+    "model__min_samples_split": 5,
+    "model__min_samples_leaf": 7,
+    "model__max_features": "log2",
+    "model__max_depth": 10,
+    "model__class_weight": "balanced"
+  }
+}

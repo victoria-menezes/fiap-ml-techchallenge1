@@ -9,12 +9,22 @@ def get_project_root() -> Path:
 
 def path_from_root(
         relative_path : Path | str,
-        create : bool = True
 ) -> Path:
     path_full = get_project_root() / relative_path
-    if create:
-        path_full.mkdir(parents=True, exist_ok=True)
     return path_full
+
+def create_path_from_root(
+        relative_path : Path | str
+    ):
+    path = path_from_root(relative_path)
+    ext = path.suffix
+
+    if ext == '':
+        path.mkdir(parents=True, exist_ok=True)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    return path
 
 def handle_special_characters(
         string : str,
